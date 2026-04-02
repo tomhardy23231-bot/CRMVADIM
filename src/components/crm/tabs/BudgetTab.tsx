@@ -1,0 +1,458 @@
+'use client';
+
+import React, { useState } from 'react';
+import type { Order } from '@/lib/crm-types';
+import { useCRM } from '@/lib/crm-context';
+import { formatUAH, calcDeviation } from '@/lib/crm-utils';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { ChevronDown, ChevronRight, Plus, Trash2, Lock, Calculator, Receipt, AlertTriangle, CircleDollarSign } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+
+// ============================================================
+// BudgetTab — Вкладка «Бюджетирование» с CRUD статей + транши
+// ============================================================
+
+interface BudgetTabProps {
+  order: Order;
+}
+
+export function BudgetTab({ order }: BudgetTabProps) {
+  const {
+    updateBudgetItemPlan,
+    updateTranche,
+    addTranche,
+    removeTranche,
+    toggleTranches,
+    addBudgetItem,
+    removeBudgetItem,
+    tr,
+  } = useCRM();
+
+  // Модалка добавления статьи
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemIsIncome, setNewItemIsIncome] = useState(false);
+
+  const expenseItems = order.budgetItems.filter((b) => !b.isIncome);
+  const incomeItems = order.budgetItems.filter((b) => b.isIncome);
+
+  // Общие итоги (только расходы)
+  const totalPlan = expenseItems.reduce((sum, b) => sum + b.plan, 0);
+  const totalFact = expenseItems.reduce((sum, b) => sum + b.fact, 0);
+  const totalDeviation = totalPlan - totalFact;
+
+  const handleAddTranche = (itemId: string) => {
+    addTranche(order.id, itemId);
+    toast.success(tr('toast_tranche_added'));
+  };
+
+  const handleRemoveTranche = (itemId: string, trancheId: string) => {
+    removeTranche(order.id, itemId, trancheId);
+    toast.info(tr('toast_tranche_removed'));
+  };
+
+  const handleAddItem = () => {
+    if (!newItemName.trim()) return;
+    addBudgetItem(order.id, newItemName.trim(), newItemIsIncome);
+    setNewItemName('');
+    setNewItemIsIncome(false);
+    setAddDialogOpen(false);
+    toast.success(tr('toast_budget_item_added'));
+  };
+
+  const handleRemoveItem = (itemId: string) => {
+    removeBudgetItem(order.id, itemId);
+    toast.info(tr('toast_budget_item_removed'));
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <Calculator className="w-4.5 h-4.5 text-gray-500" />
+              {tr('budget_title')}
+              <span className="text-xs font-normal text-gray-400 ml-1">
+                — {tr('additional_expenses')}
+              </span>
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition-all duration-150"
+                onClick={() => { setNewItemIsIncome(false); setAddDialogOpen(true); }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {tr('add_expense')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50 transition-all duration-150"
+                onClick={() => { setNewItemIsIncome(true); setAddDialogOpen(true); }}
+              >
+                <CircleDollarSign className="w-3.5 h-3.5" />
+                {tr('add_income')}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {order.budgetItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+              <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-3">
+                <Receipt className="w-7 h-7 text-gray-300" />
+              </div>
+              <p className="text-sm font-medium text-gray-500">{tr('no_expenses')}</p>
+              <p className="text-xs text-gray-400 mt-1">{tr('no_expenses_desc')}</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="text-xs font-medium text-gray-500 w-[40%]">
+                    {tr('expense_item')}
+                  </TableHead>
+                  <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
+                    {tr('plan')}
+                  </TableHead>
+                  <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
+                    {tr('fact_from_1c')}
+                  </TableHead>
+                  <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
+                    {tr('deviation')}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {order.budgetItems.map((item) => {
+                  const deviation = calcDeviation(item.plan, item.fact);
+                  const hasTranches = item.tranches && item.tranches.length > 0;
+                  const tranchesTotal = hasTranches
+                    ? item.tranches.reduce((sum, tt) => sum + tt.amount, 0)
+                    : 0;
+                  const remaining = item.plan - tranchesTotal;
+                  const isOverBudget = remaining < 0;
+                  const canAddTranche = remaining > 0;
+
+                  return (
+                    <React.Fragment key={item.id}>
+                      {/* Основная строка статьи */}
+                      <TableRow className="hover:bg-gray-50 transition-colors duration-150">
+                        {/* Название + кнопка траншей */}
+                        <TableCell className="text-sm text-gray-800 font-medium">
+                          <div className="flex items-center gap-2">
+                            {hasTranches && (
+                              <button
+                                onClick={() => toggleTranches(order.id, item.id)}
+                                className="text-gray-400 hover:text-gray-600 transition-colors"
+                              >
+                                {item.hasTranches ? (
+                                  <ChevronDown className="w-4 h-4" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4" />
+                                )}
+                              </button>
+                            )}
+                            {item.isIncome && (
+                              <CircleDollarSign className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            )}
+                            <span>{item.name}</span>
+                            {isOverBudget && (
+                              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                            )}
+                            <button
+                              onClick={() => handleRemoveItem(item.id)}
+                              className="text-gray-300 hover:text-red-500 transition-colors ml-auto shrink-0"
+                              title="Удалить статью"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </TableCell>
+
+                        {/* План (редактируемый Input) */}
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            value={item.plan}
+                            onChange={(e) =>
+                              updateBudgetItemPlan(
+                                order.id,
+                                item.id,
+                                Math.max(0, Number(e.target.value))
+                              )
+                            }
+                            className="h-8 w-28 text-right text-sm font-medium ml-auto"
+                          />
+                        </TableCell>
+
+                        {/* Факт из 1С (заблокирован) */}
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1 text-sm text-gray-500">
+                            <Lock className="w-3 h-3 text-gray-400" />
+                            {formatUAH(item.fact)}
+                          </div>
+                        </TableCell>
+
+                        {/* Отклонение */}
+                        <TableCell
+                          className={cn(
+                            'text-right text-sm font-semibold',
+                            deviation > 0
+                              ? 'text-emerald-600'
+                              : deviation < 0
+                                ? 'text-red-600'
+                                : 'text-gray-400'
+                          )}
+                        >
+                          {deviation > 0 ? '+' : ''}
+                          {formatUAH(deviation)}
+                        </TableCell>
+                      </TableRow>
+
+                      {/* Раскрытые транши */}
+                      {item.hasTranches && hasTranches && (
+                        <>
+                          <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                            <TableCell colSpan={4} className="px-0 py-0">
+                              <div className="mx-4 border-t border-dashed border-gray-300" />
+                            </TableCell>
+                          </TableRow>
+
+                          {item.tranches!.map((tranche) => (
+                            <TableRow key={tranche.id} className={cn(
+                              'transition-colors',
+                              isOverBudget
+                                ? 'bg-red-50/40 hover:bg-red-50/60'
+                                : 'bg-emerald-50/30 hover:bg-emerald-50/50'
+                            )}>
+                              {/* Транш: название + неделя */}
+                              <TableCell className="pl-12">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-500">{tr('tranche')}</span>
+                                  <Select
+                                    value={String(tranche.week)}
+                                    onValueChange={(val) =>
+                                      updateTranche(order.id, item.id, tranche.id, {
+                                        week: Number(val),
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-7 w-[110px] text-xs">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="1">Неделя 1</SelectItem>
+                                      <SelectItem value="2">Неделя 2</SelectItem>
+                                      <SelectItem value="3">Неделя 3</SelectItem>
+                                      <SelectItem value="4">Неделя 4</SelectItem>
+                                      <SelectItem value="5">Неделя 5</SelectItem>
+                                      <SelectItem value="6">Неделя 6</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </TableCell>
+
+                              {/* Сумма транша (редактируемый Input с валидацией) */}
+                              <TableCell className="text-right" colSpan={2}>
+                                <div className="flex items-center justify-end gap-2">
+                                  <Input
+                                    type="number"
+                                    value={tranche.amount}
+                                    onChange={(e) =>
+                                      updateTranche(order.id, item.id, tranche.id, {
+                                        amount: Math.max(0, Number(e.target.value)),
+                                      })
+                                    }
+                                    aria-invalid={isOverBudget}
+                                    className={cn(
+                                      'h-7 w-28 text-right text-xs ml-auto',
+                                      isOverBudget
+                                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500 bg-red-50/50'
+                                        : ''
+                                    )}
+                                    placeholder="0"
+                                  />
+                                  <span className="text-xs text-gray-500">₴</span>
+                                </div>
+                              </TableCell>
+
+                              {/* Кнопка удаления транша */}
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-gray-400 hover:text-red-500 transition-colors"
+                                  onClick={() => handleRemoveTranche(item.id, tranche.id)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+
+                          {/* Строка: осталось распределить */}
+                          <TableRow className={cn(
+                            isOverBudget ? 'bg-red-50/40 hover:bg-red-50/40' : 'bg-emerald-50/30 hover:bg-emerald-50/30'
+                          )}>
+                            <TableCell colSpan={4} className="px-12 py-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={cn(
+                                      'text-xs font-semibold',
+                                      isOverBudget ? 'text-red-600' : remaining === 0 ? 'text-emerald-600' : 'text-amber-600'
+                                    )}
+                                  >
+                                    {tr('remaining')}: {formatUAH(remaining)}
+                                  </span>
+                                  {isOverBudget && (
+                                    <span className="text-[10px] font-medium text-red-500 bg-red-100 px-1.5 py-0.5 rounded">
+                                      {tr('budget_overflow')}
+                                    </span>
+                                  )}
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={!canAddTranche}
+                                  className={cn(
+                                    'h-7 text-xs gap-1 transition-all duration-150 hover:-translate-y-0.5',
+                                    canAddTranche
+                                      ? 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+                                      : 'border-gray-200 text-gray-400 cursor-not-allowed'
+                                  )}
+                                  onClick={() => handleAddTranche(item.id)}
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  {tr('add_tranche')}
+                                </Button>
+                              </div>
+                              {/* Подсказка при превышении */}
+                              {isOverBudget && (
+                                <p className="text-[10px] text-red-400 mt-1.5">
+                                  {tr('budget_overflow_desc')}
+                                </p>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        </>
+                      )}
+
+                      {/* Кнопка «Разбить на транши» (если ещё не разбито) */}
+                      {hasTranches && !item.hasTranches && (
+                        <TableRow className="hover:bg-gray-50">
+                          <TableCell colSpan={4} className="px-12 py-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 gap-1 h-7 transition-all duration-150"
+                              onClick={() => toggleTranches(order.id, item.id)}
+                            >
+                              <ChevronRight className="w-3 h-3" />
+                              {tr('split_to_tranches')} ({item.tranches!.length})
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+
+          {/* Итого по бюджету */}
+          {order.budgetItems.length > 0 && (
+            <div className="px-6 py-3 bg-gray-50 border-t flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-gray-600">
+                {tr('total_plan')}: {formatUAH(totalPlan)}
+              </span>
+              <span className="text-sm font-semibold text-gray-600">
+                {tr('total_fact')}: {formatUAH(totalFact)}
+              </span>
+              <span
+                className={cn(
+                  'text-sm font-bold',
+                  totalDeviation >= 0 ? 'text-emerald-600' : 'text-red-600'
+                )}
+              >
+                {tr('deviation')}: {totalDeviation >= 0 ? '+' : ''}
+                {formatUAH(totalDeviation)}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ===== Модалка добавления статьи ===== */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {newItemIsIncome ? tr('income_item') : tr('expense_item')}
+            </DialogTitle>
+            <DialogDescription>
+              {newItemIsIncome ? tr('income_name_placeholder') : tr('expense_name_placeholder')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              placeholder={newItemIsIncome ? tr('income_name_placeholder') : tr('expense_name_placeholder')}
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+              {tr('cancel')}
+            </Button>
+            <Button
+              onClick={handleAddItem}
+              disabled={!newItemName.trim()}
+              className={cn(
+                'text-white',
+                newItemIsIncome
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+              )}
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              {tr('download')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
