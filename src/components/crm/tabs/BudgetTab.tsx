@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import type { Order } from '@/lib/crm-types';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH, calcDeviation } from '@/lib/crm-utils';
+import { formatUAH, calcDeviation, generateWeekOptions } from '@/lib/crm-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { ChevronDown, ChevronRight, Plus, Trash2, Lock, Calculator, Receipt, AlertTriangle, CircleDollarSign } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, Lock, Calculator, Receipt, AlertTriangle, CircleDollarSign, FileDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -52,19 +52,34 @@ export function BudgetTab({ order }: BudgetTabProps) {
     addBudgetItem,
     removeBudgetItem,
     tr,
+    lang,
   } = useCRM();
+
+  const weekOptions = generateWeekOptions(lang);
 
   // Модалка добавления статьи
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newItemName, setNewItemName] = useState('');
   const [newItemIsIncome, setNewItemIsIncome] = useState(false);
 
-  const expenseItems = order.budgetItems.filter((b) => !b.isIncome);
-  const incomeItems = order.budgetItems.filter((b) => b.isIncome);
+  // Исключаем системные статьи из интерфейса вкладки "Бюджетирование", чтобы они не мешали (оставляем их только для расчета маржи в шапке)
+  const visibleItems = order.budgetItems.filter(b => b.name !== 'Материалы (План)' && b.name !== 'Оплата от клиента');
+  const expenseItems = visibleItems.filter((b) => !b.isIncome);
+  const incomeItems = visibleItems.filter((b) => b.isIncome);
+
+  // Функция для расчета Факта из привязанных платежей 1С
+  const calculateFact = (itemId: string, isIncome: boolean, itemName: string) => {
+    if (!isIncome && itemName === 'Материалы (План)') {
+      const item = order.budgetItems.find(b => b.id === itemId);
+      return item ? item.fact : 0;
+    }
+    const linkedPayments = order.payments?.filter(p => p.budgetItemId === itemId) || [];
+    return linkedPayments.reduce((sum, p) => sum + (isIncome ? p.income : p.expense), 0);
+  };
 
   // Общие итоги (только расходы)
   const totalPlan = expenseItems.reduce((sum, b) => sum + b.plan, 0);
-  const totalFact = expenseItems.reduce((sum, b) => sum + b.fact, 0);
+  const totalFact = expenseItems.reduce((sum, b) => sum + calculateFact(b.id, false, b.name), 0);
   const totalDeviation = totalPlan - totalFact;
 
   const handleAddTranche = (itemId: string) => {
@@ -91,6 +106,69 @@ export function BudgetTab({ order }: BudgetTabProps) {
     toast.info(tr('toast_budget_item_removed'));
   };
 
+  // Экспорт бюджета в Excel
+  const handleExportExcel = useCallback(async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+
+      // Данные для листа
+      const rows = [
+        ['Бюджет тендера:', order.name],
+        ['Дата экспорта:', new Date().toLocaleDateString('ru-RU')],
+        [],
+        ['Статья', 'Тип', 'План (₴)', 'Факт из 1С (₴)', 'Отклонение (₴)'],
+      ];
+
+      for (const item of visibleItems) {
+        const fact = calculateFact(item.id, !!item.isIncome, item.name);
+        const deviation = item.plan - fact;
+        rows.push([
+          item.name,
+          item.isIncome ? 'Доход' : 'Расход',
+          item.plan as any,
+          fact as any,
+          deviation as any,
+        ]);
+
+        // Транши (если есть)
+        if (item.tranches && item.tranches.length > 0) {
+          for (const tr of item.tranches) {
+            rows.push([
+              `  └ Транш: ${tr.month}`,
+              '',
+              tr.amount as any,
+              '' as any,
+              '' as any,
+            ]);
+          }
+        }
+      }
+
+      // Итого
+      rows.push([]);
+      rows.push(['ИТОГО Расходы (План)', '', totalPlan as any, totalFact as any, (totalPlan - totalFact) as any]);
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      // Ширина колонок
+      ws['!cols'] = [
+        { wch: 35 },
+        { wch: 10 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Бюджет');
+      XLSX.writeFile(wb, `Бюджет_${order.name.replace(/[^a-zA-Zа-яА-ЯіІїЇєЄґҐ0-9]/g, '_')}.xlsx`);
+      toast.success('Excel файл скачан!');
+    } catch (err) {
+      toast.error('Ошибка экспорта в Excel');
+      console.error(err);
+    }
+  }, [order, calculateFact, totalPlan, totalFact]);
+
   return (
     <div className="space-y-4">
       <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
@@ -104,6 +182,15 @@ export function BudgetTab({ order }: BudgetTabProps) {
               </span>
             </CardTitle>
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 border-gray-300 text-gray-600 hover:bg-gray-50 transition-all duration-150"
+                onClick={handleExportExcel}
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                Excel
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -126,7 +213,7 @@ export function BudgetTab({ order }: BudgetTabProps) {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {order.budgetItems.length === 0 ? (
+          {visibleItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-3">
                 <Receipt className="w-7 h-7 text-gray-300" />
@@ -153,8 +240,9 @@ export function BudgetTab({ order }: BudgetTabProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order.budgetItems.map((item) => {
-                  const deviation = calcDeviation(item.plan, item.fact);
+                {visibleItems.map((item) => {
+                  const calculatedFact = calculateFact(item.id, item.isIncome, item.name);
+                  const deviation = calcDeviation(item.plan, calculatedFact);
                   const hasTranches = item.tranches && item.tranches.length > 0;
                   const tranchesTotal = hasTranches
                     ? item.tranches.reduce((sum, tt) => sum + tt.amount, 0)
@@ -215,11 +303,11 @@ export function BudgetTab({ order }: BudgetTabProps) {
                           />
                         </TableCell>
 
-                        {/* Факт из 1С (заблокирован) */}
+                        {/* Факт из 1С (Вычисляется Автоматически) */}
                         <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1 text-sm text-gray-500">
-                            <Lock className="w-3 h-3 text-gray-400" />
-                            {formatUAH(item.fact)}
+                          <div className="flex items-center justify-end gap-1.5 text-sm font-semibold text-gray-700 bg-gray-100/80 px-2 py-1 rounded w-fit ml-auto border border-gray-200" title="Сумируется из платежей 1С во вкладке 'Оплаты План-Факт'">
+                            <Receipt className="w-3 h-3 text-blue-500" />
+                            {formatUAH(calculatedFact)}
                           </div>
                         </TableCell>
 
@@ -260,23 +348,20 @@ export function BudgetTab({ order }: BudgetTabProps) {
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs text-gray-500">{tr('tranche')}</span>
                                   <Select
-                                    value={String(tranche.week)}
+                                    value={tranche.month}
                                     onValueChange={(val) =>
                                       updateTranche(order.id, item.id, tranche.id, {
-                                        week: Number(val),
+                                        month: val,
                                       })
                                     }
                                   >
-                                    <SelectTrigger className="h-7 w-[110px] text-xs">
+                                    <SelectTrigger className="h-7 w-[120px] text-xs">
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="1">Неделя 1</SelectItem>
-                                      <SelectItem value="2">Неделя 2</SelectItem>
-                                      <SelectItem value="3">Неделя 3</SelectItem>
-                                      <SelectItem value="4">Неделя 4</SelectItem>
-                                      <SelectItem value="5">Неделя 5</SelectItem>
-                                      <SelectItem value="6">Неделя 6</SelectItem>
+                                      {weekOptions.map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                      ))}
                                     </SelectContent>
                                   </Select>
                                 </div>
@@ -348,7 +433,7 @@ export function BudgetTab({ order }: BudgetTabProps) {
                                   className={cn(
                                     'h-7 text-xs gap-1 transition-all duration-150 hover:-translate-y-0.5',
                                     canAddTranche
-                                      ? 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+                                      ? 'bg-emerald-100 border border-emerald-300 text-emerald-700 hover:bg-emerald-200'
                                       : 'border-gray-200 text-gray-400 cursor-not-allowed'
                                   )}
                                   onClick={() => handleAddTranche(item.id)}
@@ -392,7 +477,7 @@ export function BudgetTab({ order }: BudgetTabProps) {
           )}
 
           {/* Итого по бюджету */}
-          {order.budgetItems.length > 0 && (
+          {visibleItems.length > 0 && (
             <div className="px-6 py-3 bg-gray-50 border-t flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
               <span className="text-sm font-semibold text-gray-600">
                 {tr('total_plan')}: {formatUAH(totalPlan)}
@@ -448,11 +533,12 @@ export function BudgetTab({ order }: BudgetTabProps) {
               )}
             >
               <Plus className="w-4 h-4 mr-1.5" />
-              {tr('download')}
+              {tr('save')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

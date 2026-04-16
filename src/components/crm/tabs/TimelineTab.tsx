@@ -28,12 +28,12 @@ interface DateFieldProps {
 function DateField({ label, value, icon: Icon, onChange, completed, completedLabel, onToggleCompleted }: DateFieldProps) {
   return (
     <div className={cn(
-      'flex flex-col sm:flex-row sm:items-center gap-2 p-4 rounded-lg border transition-all duration-200',
+      'flex flex-col gap-2 p-3 rounded-lg border transition-all duration-200',
       completed
         ? 'bg-emerald-50/60 border-emerald-200'
-        : 'bg-gray-50 border-transparent hover:bg-gray-100'
+        : 'bg-white border-gray-100 hover:border-gray-200 shadow-sm hover:shadow-md'
     )}>
-      <div className="flex items-center gap-2 shrink-0 min-w-[180px]">
+      <div className="flex items-center justify-between w-full">
         <div className={cn(
           'w-8 h-8 rounded-lg flex items-center justify-center border shadow-sm transition-all duration-200',
           completed
@@ -51,8 +51,9 @@ function DateField({ label, value, icon: Icon, onChange, completed, completedLab
         )}>
           {label}
         </Label>
+        {completed && <Check className="w-4 h-4 text-emerald-500 ml-auto" />}
       </div>
-      <div className="flex items-center gap-3 flex-1">
+      <div className="flex items-center gap-2 w-full mt-1">
         <input
           type="date"
           value={value}
@@ -65,21 +66,12 @@ function DateField({ label, value, icon: Icon, onChange, completed, completedLab
               : 'border-gray-300 text-gray-800'
           )}
         />
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center justify-center shrink-0 w-10">
           <Checkbox
             checked={completed}
             onCheckedChange={onToggleCompleted}
-            className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+            className="w-5 h-5 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
           />
-          <span className={cn(
-            'text-xs font-medium transition-colors whitespace-nowrap',
-            completed ? 'text-emerald-600' : 'text-gray-500'
-          )}>
-            {completedLabel}
-          </span>
-          {completed && (
-            <Check className="w-3.5 h-3.5 text-emerald-500" />
-          )}
         </div>
       </div>
     </div>
@@ -109,9 +101,9 @@ export function TimelineTab({ order }: TimelineTabProps) {
       <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <CalendarDays className="w-4.5 h-4.5 text-gray-500" />
-              {tr('tab_timeline')}
+            <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase text-gray-500 tracking-wider">
+              <CalendarDays className="w-4 h-4" />
+              Таймлайн
             </CardTitle>
             {completedCount > 0 && (
               <span className={cn(

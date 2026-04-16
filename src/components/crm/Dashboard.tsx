@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH } from '@/lib/crm-utils';
+import { formatUAH, formatWeekStr, generateWeekOptions, calcMargin } from '@/lib/crm-utils';
 import {
   AlertTriangle,
   TrendingUp,
@@ -36,6 +36,11 @@ import {
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
   Legend,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
 } from 'recharts';
 
 // ============================================================
@@ -46,7 +51,7 @@ import {
 /** Цветовой маппинг статусов */
 const statusColors: Record<string, string> = {
   'Новый': 'bg-blue-100 text-blue-700',
-  'У производстве': 'bg-amber-100 text-amber-700',
+  'В производстве': 'bg-amber-100 text-amber-700',
   'Сборка': 'bg-purple-100 text-purple-700',
   'Отгружен': 'bg-emerald-100 text-emerald-700',
 };
@@ -54,80 +59,58 @@ const statusColors: Record<string, string> = {
 /** Цвета для PieChart */
 const CHART_COLORS = ['#3b82f6', '#f59e0b', '#a855f7', '#10b981'];
 
-/** Dummy-активность для дашборда */
-const activityData = [
-  { id: 1, text: 'Изменён статус заказа TNDR-001 на "В производстве"', time: '10 мин назад', icon: CircleDot, color: 'text-amber-500 bg-amber-50' },
-  { id: 2, text: 'Добавлен транш в бюджет заказа TNDR-003', time: '1 час назад', icon: Package, color: 'text-emerald-500 bg-emerald-50' },
-  { id: 3, text: 'Импортирован заказ ORD-042 из 1С', time: '2 часа назад', icon: Inbox, color: 'text-blue-500 bg-blue-50' },
-  { id: 4, text: 'Обновлена спецификация TNDR-001 (5 позиций)', time: '3 часа назад', icon: Activity, color: 'text-purple-500 bg-purple-50' },
-  { id: 5, text: 'Завершена оплата заказа TNDR-004', time: '5 часов назад', icon: Wallet, color: 'text-emerald-500 bg-emerald-50' },
-];
-
 export function Dashboard() {
-  const { orders, setCurrentPage, setSelectedOrderId, tr } = useCRM();
+  const { orders, setCurrentPage, setSelectedOrderId, tr, lang } = useCRM();
 
   // --- Динамические метрики ---
   const metrics = useMemo(() => {
     const activeOrders = orders.filter((o) => o.status !== 'Отгружен');
+    const activeOrdersForCashGap = orders.filter((o) => o.status !== 'Отгружен');
     const activeCount = activeOrders.length;
 
-    // Ожидаемая прибыль: сумма (orderAmount - plannedCost - sum(budgetItems.plan)) всех активных
+    // Ожидаемая прибыль: orderAmount - все плановые расходы
     let expectedProfit = 0;
     for (const o of activeOrders) {
-      const budgetPlanSum = o.budgetItems.reduce((s, b) => s + b.plan, 0);
-      expectedProfit += o.orderAmount - o.plannedCost - budgetPlanSum;
+      const budgetExpenseSum = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
+      expectedProfit += o.orderAmount - budgetExpenseSum;
     }
 
-    // Выплаты на этой неделе (неделя 1 текущего месяца из календаря)
-    // Берём материалы 50% + транши на неделе 1
-    let weekPayments = 0;
-    for (const o of activeOrders) {
-      // Материалы 50% на Неделе 1
-      weekPayments += Math.round(o.plannedCost * 0.5);
-      // Транши на Неделе 1
+    // Выплаты в текущем месяце
+    const currentMonthStr = new Date().toISOString().slice(0, 7); // Формат: 2026-04
+    const currentMonthDot = '.' + String(new Date().getMonth() + 1).padStart(2, '0'); // Формат: .04
+
+    let monthPayments = 0;
+    for (const o of activeOrdersForCashGap) {
       for (const b of o.budgetItems) {
-        if (b.tranches) {
+        if (!b.isIncome && b.tranches) {
           for (const tr of b.tranches) {
-            if (tr.week === 1) {
-              weekPayments += tr.amount;
+            // Поддерживаем и старые транши (2026-04), и новые (2026-W15::06.04-12.04)
+            if (tr.month === currentMonthStr || (tr.month.includes('::') && tr.month.includes(currentMonthDot))) {
+              monthPayments += tr.amount;
             }
           }
         }
       }
     }
 
-    return { activeCount, expectedProfit, weekPayments };
+    return { activeCount, expectedProfit, monthPayments };
   }, [orders]);
 
-  // --- Кассовый разрыв из данных календаря (неделя 1 — неделя 4) ---
-  const activeOrdersForCashGap = orders.filter((o) => o.status !== 'Отгружен');
+  // --- Кассовый разрыв (прогноз на 12 недель) ---
   const cashGapAlert = (() => {
-    const weekData: { income: number; expense: number }[] = [
-      { income: 0, expense: 0 },
-      { income: 0, expense: 0 },
-      { income: 0, expense: 0 },
-      { income: 0, expense: 0 },
-    ];
+    const activeOrdersForCashGap = orders.filter((o) => o.status !== 'Отгружен');
+    const displayWeeks = generateWeekOptions(lang).map(o => o.value);
+
+    const weekData: Record<string, { income: number; expense: number }> = {};
+    displayWeeks.forEach(w => weekData[w] = { income: 0, expense: 0 });
 
     for (const o of activeOrdersForCashGap) {
-      // Поступления
-      const advance = Math.round(o.orderAmount * 0.3);
-      const finalPmt = Math.round(o.orderAmount * 0.7);
-      weekData[0].income += advance;
-      weekData[3].income += finalPmt;
-
-      // Выплаты: материалы 50/50 на неделях 1 и 2
-      const matHalf = Math.round(o.plannedCost * 0.5);
-      weekData[0].expense += matHalf;
-      weekData[1].expense += matHalf;
-
-      // Транши
       for (const b of o.budgetItems) {
         if (b.tranches) {
           for (const tr of b.tranches) {
-            const wk = Math.min(tr.week, 4) - 1;
-            if (wk >= 0 && wk < 4) {
-              weekData[wk].expense += tr.amount;
+            if (weekData[tr.month]) {
+               if (b.isIncome) weekData[tr.month].income += tr.amount;
+               else weekData[tr.month].expense += tr.amount;
             }
           }
         }
@@ -136,15 +119,11 @@ export function Dashboard() {
 
     // Кумулятивный баланс
     let running = 0;
-    const weekLabels = ['Неделя 1', 'Неделя 2', 'Неделя 3', 'Неделя 4'];
-    const dateRanges = ['01.05 — 07.05', '08.05 — 14.05', '15.05 — 21.05', '22.05 — 28.05'];
-
-    for (let i = 0; i < 4; i++) {
-      running += weekData[i].income - weekData[i].expense;
+    for (const w of displayWeeks) {
+      running += weekData[w].income - weekData[w].expense;
       if (running < 0) {
         return {
-          week: weekLabels[i],
-          dateRange: dateRanges[i],
+          weekStr: w,
           deficit: running,
         };
       }
@@ -152,6 +131,89 @@ export function Dashboard() {
 
     return null;
   })();
+
+  // --- Динамическая лента активности ---
+  const activityItems = useMemo(() => {
+    const items: { id: string; icon: any; color: string; text: string; time: string; orderId: string; sortDate: Date }[] = [];
+    const now = new Date();
+
+    for (const o of orders) {
+      const createdAt = new Date(o.createdAt);
+      const diffDays = Math.floor((now.getTime() - createdAt.getTime()) / 86400000);
+      const timeStr = diffDays === 0 ? 'Сегодня' : diffDays === 1 ? 'Вчера' : `${diffDays} д. назад`;
+
+      // Новые заказы (созданные за последние 30 дней)
+      if (diffDays <= 30) {
+        items.push({
+          id: `new-${o.id}`,
+          icon: ClipboardList,
+          color: 'bg-blue-100 text-blue-600',
+          text: `Тендер «${o.name}» добавлен в систему`,
+          time: timeStr,
+          orderId: o.id,
+          sortDate: createdAt,
+        });
+      }
+
+      // Горящие дедлайны (в пределах 7 дней)
+      const dl = new Date(o.deadline);
+      const deadlineDiff = Math.floor((dl.getTime() - now.getTime()) / 86400000);
+      if (deadlineDiff >= 0 && deadlineDiff <= 7 && o.status !== 'Отгружен') {
+        items.push({
+          id: `deadline-${o.id}`,
+          icon: Flame,
+          color: 'bg-orange-100 text-orange-600',
+          text: `Дедлайн «${o.name}» через ${deadlineDiff === 0 ? 'СЕГОДНЯ!' : `${deadlineDiff} дн.`}`,
+          time: dl.toLocaleDateString('ru-RU'),
+          orderId: o.id,
+          sortDate: dl,
+        });
+      }
+
+      // Завершённые этапы
+      if (o.isProductionStarted && o.status === 'В производстве') {
+        items.push({
+          id: `prod-${o.id}`,
+          icon: CircleDot,
+          color: 'bg-amber-100 text-amber-600',
+          text: `Производство запущено: «${o.name}»`,
+          time: timeStr,
+          orderId: o.id,
+          sortDate: createdAt,
+        });
+      }
+      if (o.isShipped) {
+        items.push({
+          id: `shipped-${o.id}`,
+          icon: Package,
+          color: 'bg-emerald-100 text-emerald-600',
+          text: `Тендер «${o.name}» отгружен ✓`,
+          time: timeStr,
+          orderId: o.id,
+          sortDate: createdAt,
+        });
+      }
+
+      // Оплаты получены
+      const totalIncome = (o.payments || []).reduce((sum, p) => sum + p.income, 0);
+      if (totalIncome > 0) {
+        items.push({
+          id: `pay-${o.id}`,
+          icon: Wallet,
+          color: 'bg-green-100 text-green-600',
+          text: `Получено ${formatUAH(totalIncome)} по «${o.name}»`,
+          time: timeStr,
+          orderId: o.id,
+          sortDate: createdAt,
+        });
+      }
+    }
+
+    // Сортируем по дате (новые первые) и берём 8 самых свежих
+    return items
+      .sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime())
+      .slice(0, 8);
+  }, [orders]);
 
   // Фильтруем «горящие» отгрузки (дедлайн ближайшие 2 недели)
   const today = new Date();
@@ -187,7 +249,7 @@ export function Dashboard() {
             </div>
             <div>
               <p className="text-sm font-semibold text-red-800">
-                {tr('cash_gap_alert')}: {cashGapAlert.week} ({cashGapAlert.dateRange})
+                {tr('cash_gap_alert')}: {formatWeekStr(cashGapAlert.weekStr, lang as 'ru' | 'ukr').replace('\n', ' ')}
               </p>
               <p className="text-sm text-red-600 mt-0.5">
                 {tr('deficit')}: <span className="font-bold">{formatUAH(cashGapAlert.deficit)}</span>
@@ -207,58 +269,58 @@ export function Dashboard() {
 
       {/* --- Карточки метрик --- */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
+        <Card className="bg-gradient-to-br from-white to-gray-50/50 border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">
                   {tr('active_orders')}
                 </p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
+                <p className="text-4xl font-black text-gray-800 mt-2 pl-1 tracking-tight group-hover:text-emerald-700 transition-colors">
                   {metrics.activeCount}
                 </p>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <ClipboardList className="w-6 h-6 text-emerald-600" />
+              <div className="w-14 h-14 rounded-2xl bg-white shadow-[0_4px_12px_rgba(0,0,0,0.05)] border border-gray-100 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <ClipboardList className="w-6 h-6 text-gray-600 group-hover:text-emerald-600 transition-colors" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
+        <Card className="bg-gradient-to-br from-emerald-50/50 to-white border-emerald-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                <p className="text-[11px] font-bold text-emerald-600/70 uppercase tracking-widest pl-1">
                   {tr('expected_profit')}
                 </p>
                 <p className={cn(
-                  'text-3xl font-bold mt-1',
-                  metrics.expectedProfit >= 0 ? 'text-emerald-600' : 'text-red-600'
+                  'text-4xl font-black mt-2 pl-1 tracking-tight',
+                  metrics.expectedProfit >= 0 ? 'text-emerald-700' : 'text-red-600'
                 )}>
                   {formatUAH(metrics.expectedProfit)}
                 </p>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-emerald-600" />
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-emerald-400 to-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.3)] border border-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <TrendingUp className="w-6 h-6 text-white" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
+        <Card className="bg-gradient-to-br from-blue-50/50 to-white border-blue-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  {tr('week_payments')}
+                <p className="text-[11px] font-bold text-blue-500/70 uppercase tracking-widest pl-1">
+                  {tr('month_payments') || 'Выплаты месяца'}
                 </p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {formatUAH(metrics.weekPayments)}
+                <p className="text-4xl font-black text-blue-900 mt-2 pl-1 tracking-tight">
+                  {formatUAH(metrics.monthPayments)}
                 </p>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center">
-                <Wallet className="w-6 h-6 text-amber-600" />
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-blue-400 to-blue-500 shadow-[0_4px_12px_rgba(59,130,246,0.3)] border border-blue-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Wallet className="w-6 h-6 text-white" />
               </div>
             </div>
           </CardContent>
@@ -325,10 +387,20 @@ export function Dashboard() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-              {activityData.map((item) => {
+              {activityItems.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                  <Activity className="w-8 h-8 text-gray-200 mb-2" />
+                  <p className="text-sm font-medium">Пока нет активности</p>
+                </div>
+              )}
+              {activityItems.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <div key={item.id} className="flex items-start gap-3 group">
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-3 group cursor-pointer hover:bg-gray-50 -mx-2 px-2 py-1.5 rounded-lg transition-colors"
+                    onClick={() => setSelectedOrderId(item.orderId)}
+                  >
                     <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5', item.color)}>
                       <Icon className="w-4 h-4" />
                     </div>
@@ -346,6 +418,76 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* --- График маржинальности по заказам --- */}
+      {orders.length > 0 && (
+        <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <TrendingUp className="w-4.5 h-4.5 text-emerald-500" />
+              {tr('margin_chart') || 'Маржинальность по заказам'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={orders.map(o => {
+                    const expenseBudget = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
+                    const margin = calcMargin(o.orderAmount, expenseBudget);
+                    return {
+                      name: o.name.length > 18 ? o.name.slice(0, 18) + '…' : o.name,
+                      margin,
+                      fill: margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444',
+                    };
+                  })}
+                  margin={{ top: 5, right: 20, left: 0, bottom: 50 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 11, fill: '#9ca3af' }}
+                    angle={-35}
+                    textAnchor="end"
+                    height={60}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#9ca3af' }}
+                    unit="%"
+                    domain={[0, 'auto']}
+                  />
+                  <RechartsTooltip
+                    contentStyle={{
+                      borderRadius: '8px',
+                      border: '1px solid #e5e7eb',
+                      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                      fontSize: '12px',
+                    }}
+                    formatter={(value: number) => [`${value}%`, 'Маржа']}
+                  />
+                  <Bar
+                    dataKey="margin"
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={48}
+                  >
+                    {orders.map((_, index) => {
+                      const expenseBudget = orders[index].budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
+                      const margin = calcMargin(orders[index].orderAmount, expenseBudget);
+                      const color = margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444';
+                      return <Cell key={`cell-${index}`} fill={color} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center justify-center gap-4 mt-2 text-[11px] text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> ≥ 20% — здоровая</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 10-20% — средняя</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> &lt; 10% — низкая</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* --- Горящие отгрузки --- */}
       <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">

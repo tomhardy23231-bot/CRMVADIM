@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { CRMProvider, useCRM } from '@/lib/crm-context';
+import { SessionProvider, useSession } from 'next-auth/react';
 import { Sidebar } from '@/components/crm/Sidebar';
 import { MobileSidebar } from '@/components/crm/MobileSidebar';
 import { Header } from '@/components/crm/Header';
@@ -9,6 +10,9 @@ import { Dashboard } from '@/components/crm/Dashboard';
 import { OrdersList } from '@/components/crm/OrdersList';
 import { OrderCard } from '@/components/crm/OrderCard';
 import { PaymentCalendar } from '@/components/crm/PaymentCalendar';
+import { Settings } from '@/components/crm/Settings';
+import { DashboardSkeleton, OrdersListSkeleton } from '@/components/crm/LoadingSkeleton';
+import type { UserInfo } from '@/lib/crm-types';
 
 // ============================================================
 // CRMShell — Внутренняя оболочка: Sidebar + Header + Content
@@ -16,7 +20,7 @@ import { PaymentCalendar } from '@/components/crm/PaymentCalendar';
 // ============================================================
 
 function CRMShell() {
-  const { currentPage, selectedOrderId, setSelectedOrderId, setBreadcrumbs, lang, tr } = useCRM();
+  const { currentPage, selectedOrderId, setSelectedOrderId, setBreadcrumbs, lang, tr, isLoading } = useCRM();
 
   // Обновляем хлебные крошки при смене страницы или языка
   useEffect(() => {
@@ -44,6 +48,12 @@ function CRMShell() {
 
   // Определяем, что рендерить
   const renderContent = () => {
+    // Скелетоны загрузки
+    if (isLoading) {
+      if (currentPage === 'orders') return <OrdersListSkeleton />;
+      return <DashboardSkeleton />;
+    }
+
     // Если выбран заказ — показываем карточку
     if (selectedOrderId) {
       return <OrderCard orderId={selectedOrderId} onBack={handleBackToOrders} />;
@@ -56,6 +66,8 @@ function CRMShell() {
         return <OrdersList onSelectOrder={handleSelectOrder} />;
       case 'payment-calendar':
         return <PaymentCalendar />;
+      case 'settings':
+        return <Settings />;
       default:
         return <Dashboard />;
     }
@@ -72,20 +84,8 @@ function CRMShell() {
         <div className="lg:hidden flex items-center gap-2 px-4 h-14 border-b border-gray-200 bg-white">
           <MobileSidebar />
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-emerald-600 flex items-center justify-center shadow-sm shadow-emerald-200">
-              <svg
-                className="w-4 h-4 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5.428 17.245A10.5 10.5 0 0018.572 6.755M18.572 6.755A10.5 10.5 0 005.428 17.245"
-                />
-              </svg>
+            <div className="w-7 h-7 rounded-md bg-gray-900 flex items-center justify-center shadow-sm shadow-gray-200">
+              <img src="/logo-white.svg" alt="WWC Logo" className="w-4.5 h-4.5 object-contain" />
             </div>
             <span className="text-sm font-bold text-gray-900 tracking-wide">WEST WOOD</span>
           </div>
@@ -106,13 +106,38 @@ function CRMShell() {
 }
 
 // ============================================================
-// Page — Точка входа. Оборачиваем всё в CRMProvider
+// SessionWrapper — Извлекает сессию и пробрасывает user в CRMProvider
+// ============================================================
+
+function SessionWrapper() {
+  const { data: session } = useSession();
+
+  const user: UserInfo | null = session?.user
+    ? {
+        id: (session.user as any).id,
+        login: (session.user as any).login || '',
+        firstName: (session.user as any).firstName || '',
+        lastName: (session.user as any).lastName || '',
+        role: (session.user as any).role || 'WORKER',
+        permissions: (session.user as any).permissions || {},
+      }
+    : null;
+
+  return (
+    <CRMProvider user={user}>
+      <CRMShell />
+    </CRMProvider>
+  );
+}
+
+// ============================================================
+// Page — Точка входа. Оборачиваем в SessionProvider + CRMProvider
 // ============================================================
 
 export default function Home() {
   return (
-    <CRMProvider>
-      <CRMShell />
-    </CRMProvider>
+    <SessionProvider>
+      <SessionWrapper />
+    </SessionProvider>
   );
 }

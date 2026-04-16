@@ -40,8 +40,8 @@ export function MobileSidebar() {
         {/* Логотип */}
         <div className="px-5 py-6 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shadow-sm shadow-emerald-200">
-              <TreePine className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 rounded-xl bg-gray-900 flex items-center justify-center shadow-sm shadow-gray-200">
+              <img src="/logo-white.svg" alt="WWC Logo" className="w-6 h-6 object-contain" />
             </div>
             <div className="flex flex-col">
               <span className="text-sm font-bold tracking-wide text-gray-900 leading-tight">

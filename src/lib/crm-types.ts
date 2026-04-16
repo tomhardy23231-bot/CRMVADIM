@@ -6,13 +6,36 @@
 export type OrderStatus = 'Новый' | 'В производстве' | 'Сборка' | 'Отгружен';
 
 /** Навигационные страницы приложения */
-export type PageId = 'dashboard' | 'orders' | 'payment-calendar';
+export type PageId = 'dashboard' | 'orders' | 'payment-calendar' | 'settings';
+
+/** Роли пользователей */
+export type UserRole = 'ADMIN' | 'MANAGER' | 'WORKER';
+
+/** Разрешения пользователя */
+export interface UserPermissions {
+  canViewProfit: boolean;
+  canViewBudget: boolean;
+  canViewPaymentCalendar: boolean;
+  canEditOrders: boolean;
+  canViewDashboardFinance: boolean;
+  canImportFrom1C: boolean;
+}
+
+/** Информация о текущем пользователе */
+export interface UserInfo {
+  id: string;
+  login: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+  permissions: UserPermissions;
+}
 
 /** Транш — часть разбиения статьи бюджета по неделям */
 export interface Tranche {
   id: string;
   amount: number;       // Сумма транша (₴)
-  week: number;         // Номер недели (1, 2, 3…)
+  month: string;        // Год-Месяц (YYYY-MM), например '2026-05'
 }
 
 /** Статья расходов/доходов в бюджете */
@@ -33,7 +56,20 @@ export interface SpecItem {
   unit: string;          // Единица измерения
   quantity: number;      // Количество
   pricePerUnit: number;  // Цена за единицу (₴)
-  total: number;         // Итого (₴)
+  total: number;         // Итого продажи (₴)
+  cost?: number;         // Реальная себестоимость из 1С (₴)
+}
+
+/** Взаиморасчеты (Платеж из 1С) */
+export interface Payment1C {
+  id: string;
+  orderId: string;
+  date: string;          // Дата документа
+  document: string;      // Представление документа 1С
+  article?: string;
+  income: number;        // Приход (Оплата от клиента)
+  expense: number;       // Расход (Оплата поставщикам/прочее)
+  budgetItemId?: string;
 }
 
 /** Заказ */
@@ -42,6 +78,7 @@ export interface Order {
   name: string;                  // Название
   status: OrderStatus;
   orderAmount: number;           // Сумма заказа (₴)
+  isAmountManual?: boolean;      // Ручной ввод суммы
   plannedCost: number;           // Плановая себестоимость (₴)
   deadline: string;              // Дедлайн (ISO date string)
   productionStart: string;       // Старт производства
@@ -49,6 +86,7 @@ export interface Order {
   shippingStart: string;         // Начало отгрузки
   budgetItems: BudgetItem[];     // Дополнительные расходы
   specItems: SpecItem[];         // Спецификация из 1С
+  payments?: Payment1C[];        // Исходные документы оплат из 1С
   createdAt: string;
   // Фактические отметки выполнения этапов
   isProductionStarted?: boolean; // Факт: производство начато
@@ -56,17 +94,7 @@ export interface Order {
   isShipped?: boolean;           // Факт: отгрузка выполнена
 }
 
-/** Строка платежного календаря (поступление или выплата) */
-export interface CalendarRow {
-  id: string;
-  label: string;           // Название статьи
-  week1: number;
-  week2: number;
-  week3: number;
-  week4: number;
-  isIncome?: boolean;      // true = поступление, false = выплата
-  orderId?: string;        // ID заказа (для фильтрации; пустое = общая статья)
-}
+
 
 /** Статья бюджета может быть доходом или расходом */
 export type BudgetItemType = 'expense' | 'income';

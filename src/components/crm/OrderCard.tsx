@@ -4,7 +4,7 @@ import React from 'react';
 import { useCRM } from '@/lib/crm-context';
 import type { Order, OrderStatus } from '@/lib/crm-types';
 import { formatUAH, calcMargin } from '@/lib/crm-utils';
-import { ArrowLeft, Check, PackageX } from 'lucide-react';
+import { ArrowLeft, Check, PackageX, Receipt, Pencil } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,7 @@ import { SpecTab } from './tabs/SpecTab';
 import { TimelineTab } from './tabs/TimelineTab';
 import { BudgetTab } from './tabs/BudgetTab';
 import { OrderCalendarTab } from './tabs/OrderCalendarTab';
+import { Payments1CTab } from './tabs/Payments1CTab';
 
 // ============================================================
 // OrderCard — Карточка заказа с прогресс-баром, статусом, 4 вкладками
@@ -44,14 +45,30 @@ const statusDotColors: Record<string, string> = {
   'Отгружен': 'bg-emerald-500',
 };
 
+const statusTranslateMap: Record<string, string> = {
+  'Новый': 'new_status',
+  'В производстве': 'in_production',
+  'Сборка': 'assembly',
+  'Отгружен': 'shipped',
+};
+
 interface OrderCardProps {
   orderId: string;
   onBack: () => void;
 }
 
 export function OrderCard({ orderId, onBack }: OrderCardProps) {
-  const { orders, updateOrderStatus, tr } = useCRM();
+  const { orders, updateOrderStatus, updateOrderAmount, tr } = useCRM();
   const order = orders.find((o) => o.id === orderId);
+
+  const [isEditingAmount, setIsEditingAmount] = React.useState(false);
+  const [amountValue, setAmountValue] = React.useState(order?.orderAmount || 0);
+
+  React.useEffect(() => {
+    if (order && !isEditingAmount) {
+      setAmountValue(order.orderAmount);
+    }
+  }, [order, isEditingAmount]);
 
   if (!order) {
     return (
@@ -73,10 +90,26 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
   const progressPercent = (currentStepIndex / (statusSteps.length - 1)) * 100;
 
   // Финансовые расчёты
-  const totalBudget = order.budgetItems.reduce((sum, b) => sum + b.plan, 0);
-  const totalFactBudget = order.budgetItems.reduce((sum, b) => sum + b.fact, 0);
-  const totalCost = order.plannedCost + totalBudget;
-  const totalFactCost = order.plannedCost + totalFactBudget;
+  // У нас есть order.plannedCost (это то, что пришло из спецификации)
+  // И есть budgetItems (где могут быть вручную добавленные расходы)
+  const totalExpenseBudget = order.budgetItems.filter(b => !b.isIncome).reduce((sum, b) => sum + b.plan, 0);
+  
+  // Рассчитываем фактические затраты:
+  // 1. Статья "Материалы (План)" использует свой жесткий факт из БД (рассчитанный 1С).
+  // 2. Все остальные (прочие) статьи считают свой факт из привязанных платежек.
+  const totalFactExpense = order.budgetItems.filter(b => !b.isIncome).reduce((sum, b) => {
+    if (b.name === 'Материалы (План)') {
+      return sum + b.fact;
+    }
+    const linkedPayments = (order.payments || []).filter(p => p.budgetItemId === b.id);
+    const paymentsSum = linkedPayments.reduce((acc, p) => acc + p.expense, 0);
+    return sum + paymentsSum;
+  }, 0);
+  
+  // Общая стоимость проекта = сумма всех плановых расходов
+  const totalCost = totalExpenseBudget;
+  const totalFactCost = totalFactExpense;
+  
   const plannedMargin = calcMargin(order.orderAmount, totalCost);
   const actualMargin = calcMargin(order.orderAmount, totalFactCost);
 
@@ -87,28 +120,30 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
   };
 
   return (
-    <div className="space-y-5">
-      {/* Кнопка «Назад» */}
-      <Button variant="ghost" onClick={onBack} className="text-gray-500 hover:text-gray-800 -ml-2 transition-all duration-200">
-        <ArrowLeft className="w-4 h-4 mr-1.5" />
-        {tr('back_to_orders')}
-      </Button>
-
-      {/* Шапка заказа */}
-      <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
-        <CardContent className="p-5 space-y-5">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
+      {/* === LEFT COLUMN (Основной контент) === */}
+      <div className="space-y-4 min-w-0">
+        
+        {/* Кнопка «Назад» */}
+        <Button variant="ghost" onClick={onBack} className="h-8 px-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md shadow-sm transition-all duration-200 w-fit group">
+          <ArrowLeft className="w-3.5 h-3.5 mr-1.5 group-hover:-translate-x-0.5 transition-transform" />
+          {tr('back_to_orders')}
+        </Button>
+          {/* Шапка заказа */}
+          <Card className="bg-white/80 backdrop-blur-md shadow-sm hover:shadow-md transition-all duration-200 border-gray-200/60">
+        <CardContent className="p-3 space-y-3">
           {/* Заголовок + статус (выпадающий список) */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="font-mono text-xs font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                  {order.id}
+                  ID: {order.externalId || order.id.slice(0, 8)}
                 </span>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="cursor-pointer">
                       <Badge variant="outline" className={cn('cursor-pointer transition-all duration-150 hover:shadow-sm', statusBadgeStyles[order.status])}>
-                        {order.status}
+                        {tr(statusTranslateMap[order.status] || order.status)}
                       </Badge>
                     </button>
                   </DropdownMenuTrigger>
@@ -123,7 +158,7 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
                         )}
                       >
                         <span className={cn('w-2 h-2 rounded-full', statusDotColors[s])} />
-                        {s}
+                        {tr(statusTranslateMap[s] || s)}
                         {s === order.status && (
                           <Check className="w-3.5 h-3.5 text-gray-400 ml-auto" />
                         )}
@@ -132,80 +167,95 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              <h1 className="text-lg font-semibold text-gray-900">{order.name}</h1>
+              <h1 className="text-base font-semibold text-gray-900 leading-tight">{order.name}</h1>
             </div>
           </div>
-
-          {/* Прогресс-бар статусов — кликабельные кружочки */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              {statusSteps.map((step, i) => (
-                <React.Fragment key={step}>
-                  <div className="flex flex-col items-center gap-1 flex-1">
-                    <button
-                      onClick={() => handleStatusChange(step)}
-                      className={cn(
-                        'w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-300 border-2 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2',
-                        i <= currentStepIndex
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-200 hover:bg-emerald-700 hover:shadow-md hover:scale-110 cursor-pointer'
-                          : 'bg-white text-gray-400 border-gray-300 hover:border-emerald-400 hover:text-emerald-600 hover:shadow-sm cursor-pointer'
-                      )}
-                      title={`${tr('toast_status_changed')} «${step}»`}
-                    >
-                      {i < currentStepIndex ? (
-                        <Check className="w-4 h-4" />
-                      ) : (
-                        <span>{i + 1}</span>
-                      )}
-                    </button>
-                    <span
-                      className={cn(
-                        'text-[10px] font-medium text-center leading-tight transition-colors duration-300',
-                        i <= currentStepIndex ? 'text-emerald-700' : 'text-gray-400'
-                      )}
-                    >
-                      {step}
-                    </span>
-                  </div>
-                </React.Fragment>
-              ))}
-            </div>
-            <Progress value={progressPercent} className="h-1.5" />
-          </div>
-
-          <Separator />
 
           {/* Финансовая сводка */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-3 rounded-lg bg-gray-50">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{tr('order_amount')}</p>
-              <p className="text-xl font-bold text-gray-900">{formatUAH(order.orderAmount)}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-gray-100">
+            <div className="p-1 px-2 group border border-transparent hover:border-gray-200 transition-colors rounded-md">
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">{tr('order_amount')}</p>
+                  {order.isAmountManual && !isEditingAmount && (
+                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-0.5" title="Введено вручную">
+                      <Pencil className="w-2.5 h-2.5" /> Вручную
+                    </span>
+                  )}
+                </div>
+                {!isEditingAmount && (
+                  <button 
+                    onClick={() => setIsEditingAmount(true)} 
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-gray-200 rounded text-gray-500 shadow-sm"
+                    title="Редактировать сумму"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              
+              {isEditingAmount ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    className="w-full bg-white border border-emerald-400 rounded px-2 py-1 text-base font-bold text-gray-900 outline-none focus:ring-2 focus:ring-emerald-400/50"
+                    value={amountValue || ''}
+                    onChange={(e) => setAmountValue(Number(e.target.value))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        updateOrderAmount(order.id, amountValue);
+                        setIsEditingAmount(false);
+                      } else if (e.key === 'Escape') {
+                        setAmountValue(order.orderAmount);
+                        setIsEditingAmount(false);
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => {
+                        updateOrderAmount(order.id, amountValue);
+                        setIsEditingAmount(false);
+                    }}
+                    className="p-1 px-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 shadow-sm shrink-0"
+                  >
+                    <Check className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <p className={cn(
+                  "text-base font-bold",
+                  order.isAmountManual ? "text-emerald-600" : "text-red-500"
+                )}>
+                  {formatUAH(order.orderAmount)}
+                </p>
+              )}
             </div>
-            <div className="p-3 rounded-lg bg-gray-50">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{tr('planned_margin')}</p>
+            <div className="p-1 px-2">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('planned_margin')}</p>
               <p
                 className={cn(
-                  'text-xl font-bold',
+                  'text-base font-bold',
                   plannedMargin >= 20 ? 'text-emerald-600' : plannedMargin >= 10 ? 'text-amber-600' : 'text-red-600'
                 )}
               >
                 {plannedMargin}%
               </p>
             </div>
-            <div className="p-3 rounded-lg bg-gray-50">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{tr('actual_margin')}</p>
+            <div className="p-1 px-2">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('actual_margin')}</p>
               <p
                 className={cn(
-                  'text-xl font-bold',
+                  'text-base font-bold',
                   actualMargin >= 20 ? 'text-emerald-600' : actualMargin >= 10 ? 'text-amber-600' : 'text-red-600'
                 )}
               >
-                {totalFactBudget > 0 ? `${actualMargin}%` : '—'}
+                {totalFactCost > 0 ? `${actualMargin}%` : '—'}
               </p>
             </div>
-            <div className="p-3 rounded-lg bg-gray-50">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{tr('cost')}</p>
-              <p className="text-xl font-bold text-gray-900">{formatUAH(totalCost)}</p>
+            <div className="p-1 px-2">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('cost')}</p>
+              <p className="text-base font-bold text-gray-900">{formatUAH(totalCost)}</p>
             </div>
           </div>
         </CardContent>
@@ -213,28 +263,29 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
 
       {/* Вкладки */}
       <Tabs defaultValue="spec" className="w-full">
-        <TabsList className="bg-white border border-gray-200 p-0.5 h-10">
+        <TabsList className="bg-white border border-gray-200 p-0.5 h-8">
           <TabsTrigger
             value="spec"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-4 text-sm"
+            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs"
           >
             {tr('tab_spec')}
           </TabsTrigger>
           <TabsTrigger
-            value="timeline"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-4 text-sm"
-          >
-            {tr('tab_timeline')}
-          </TabsTrigger>
-          <TabsTrigger
             value="budget"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-4 text-sm"
+            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs"
           >
             {tr('tab_budget')}
           </TabsTrigger>
           <TabsTrigger
+            value="payments"
+            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs font-semibold flex items-center gap-1.5"
+          >
+            <Receipt className="w-3.5 h-3.5" />
+            Оплаты План-Факт
+          </TabsTrigger>
+          <TabsTrigger
             value="order-calendar"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-4 text-sm"
+            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs"
           >
             {tr('tab_calendar')}
           </TabsTrigger>
@@ -244,18 +295,85 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
           <SpecTab order={order} />
         </TabsContent>
 
-        <TabsContent value="timeline" className="mt-4">
-          <TimelineTab order={order} />
-        </TabsContent>
-
         <TabsContent value="budget" className="mt-4">
           <BudgetTab order={order} />
+        </TabsContent>
+
+        <TabsContent value="payments" className="mt-4">
+          <Payments1CTab order={order} />
         </TabsContent>
 
         <TabsContent value="order-calendar" className="mt-4">
           <OrderCalendarTab order={order} />
         </TabsContent>
       </Tabs>
+      </div>
+
+      {/* === RIGHT COLUMN (Sidebar: Статусы + Таймлайн) === */}
+      <div className="flex flex-col gap-4 lg:sticky lg:top-4">
+        
+        {/* Новый блок статуса (Вертикальный или Капсулы) */}
+        <Card className="bg-white shadow-sm border-gray-200/60 transition-all duration-200 hover:shadow-md">
+          <CardContent className="p-4">
+            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Текущий этап</h2>
+            <div className="space-y-3">
+              {statusSteps.map((step, i) => {
+                const isCompleted = i < currentStepIndex;
+                const isCurrent = i === currentStepIndex;
+                const isFuture = i > currentStepIndex;
+
+                return (
+                  <div key={step} className="flex items-start gap-3 relative group">
+                    {/* Линия соединения (кроме последнего) */}
+                    {i < statusSteps.length - 1 && (
+                      <div className={cn(
+                        "absolute left-3 top-7 bottom-[-12px] w-[2px] transition-colors duration-500",
+                        isCompleted ? "bg-emerald-500" : "bg-gray-100"
+                      )} />
+                    )}
+                    
+                    {/* Круглая иконка */}
+                    <button
+                      onClick={() => handleStatusChange(step)}
+                      className={cn(
+                        "relative z-10 w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-all duration-300",
+                        isCompleted ? "bg-emerald-500 border-emerald-500 text-white" :
+                        isCurrent ? "bg-white border-emerald-500 ring-4 ring-emerald-50" :
+                        "bg-white border-gray-200 group-hover:border-emerald-300"
+                      )}
+                      title={`Сменить на "${step}"`}
+                    >
+                      {isCompleted || (isCurrent && i === statusSteps.length - 1) ? <Check className="w-3.5 h-3.5" /> : 
+                       isCurrent ? <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> : 
+                       <div className="w-1.5 h-1.5 rounded-full bg-gray-200 group-hover:bg-emerald-300" />}
+                    </button>
+                    
+                    {/* Текст */}
+                    <div className="flex-1 pt-0.5 pb-1">
+                      <p className={cn(
+                        "text-sm font-medium transition-colors cursor-pointer",
+                        isCompleted ? "text-gray-900" :
+                        isCurrent ? "text-emerald-700" :
+                        "text-gray-400 group-hover:text-gray-600"
+                      )}
+                      onClick={() => handleStatusChange(step)}
+                      >
+                        {tr(statusTranslateMap[step] || step)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Блок Таймлайна (Таймлайн сам рендерит карточку) */}
+        <div className="transition-all duration-200">
+          <TimelineTab order={order} />
+        </div>
+
+      </div>
     </div>
   );
 }

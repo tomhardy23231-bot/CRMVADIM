@@ -9,24 +9,142 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
+model Order {
+  id                  String   @id @default(cuid()) // internal ID
+  externalId          String?  // Can store 1C Contract/Tender ID
+  name                String
+  status              String   @default("Новый") // 'Новый' | 'В производстве' | 'Сборка' | 'Отгружен'
+  orderAmount         Float    @default(0)
+  isAmountManual      Boolean  @default(false)
+  plannedCost         Float    @default(0)
+  deadline            String   // ISO limit
+  productionStart     String
+  assemblyStart       String
+  shippingStart       String
+  
+  isProductionStarted Boolean  @default(false)
+  isAssemblyStarted   Boolean  @default(false)
+  isShipped           Boolean  @default(false)
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  budgetItems         BudgetItem[]
+  specItems           SpecItem[]
+  payments            Payment1C[]
+}
+
+model BudgetItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  name        String
+  plan        Float    @default(0)
+  fact        Float    @default(0)
+  isIncome    Boolean  @default(false)
+  hasTranches Boolean  @default(false)
+
+  tranches    Tranche[]
+  payments    Payment1C[] // Привязанные факты из 1С
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Tranche {
+  id           String     @id @default(cuid())
+  budgetItemId String
+  budgetItem   BudgetItem @relation(fields: [budgetItemId], references: [id], onDelete: Cascade)
+  
+  amount       Float      @default(0)
+  month        String     // 'YYYY-MM'
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model SpecItem {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  material     String
+  unit         String
+  quantity     Float    @default(1)
+  pricePerUnit Float    @default(0)
+  total        Float    @default(0)
+  cost         Float?   // Себестоимость
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Payment1C {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  date         String   // Дата операции
+  document     String   // Строковое представление документа 1С (РКО и тд)
+  article      String?  // Статья ДДС или комментарий (из 1С)
+  income       Float    @default(0)
+  expense      Float    @default(0)
+
+  budgetItemId String?  // Привязка к конкретной плановой статье бюджета СРМ
+  budgetItem   BudgetItem? @relation(fields: [budgetItemId], references: [id])
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ============================================================
+// Роли пользователей
+// ============================================================
+enum UserRole {
+  ADMIN     // Полный доступ + управление аккаунтами
+  MANAGER   // Менеджер — работа с заказами
+  WORKER    // Рабочий — минимальный доступ
+}
+
+// ============================================================
+// Пользователь системы
+// ============================================================
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  login       String   @unique
+  password    String                       // bcrypt hash
+  firstName   String
+  lastName    String
+  role        UserRole @default(MANAGER)
+  isActive    Boolean  @default(true)
+
+  // JSON-объект с разрешениями (canViewProfit, canViewBudget, etc.)
+  permissions Json     @default("{}")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  logs        AuditLog[]
 }
 
-model Post {
+// ============================================================
+// Журнал действий (Audit Log)
+// ============================================================
+model AuditLog {
   id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  action    String   // "order.create", "user.login", "budget.update" ...
+  entity    String?  // "order", "user", "budgetItem"
+  entityId  String?  // ID затронутой сущности
+  details   Json?    // { oldValue, newValue, description }
+
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }

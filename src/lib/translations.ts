@@ -11,6 +11,7 @@ const ru: TranslationMap = {
   dashboard: 'Дашборд',
   orders: 'Заказы',
   payment_calendar: 'Платёжный календарь',
+  settings: 'Настройки',
   finance: 'Финансы',
   furniture_manufacturing: 'Мебельное производство',
 
@@ -20,12 +21,14 @@ const ru: TranslationMap = {
   solve_problem: 'Решить проблему',
   active_orders: 'Активных заказов',
   expected_profit: 'Ожидаемая прибыль',
+  month_payments: 'Выплаты месяца',
   week_payments: 'Выплаты на этой неделе',
   hot_shipments: 'Горящие отгрузки',
   order_funnel: 'Воронка заказов',
   recent_activity: 'Недавняя активность',
   no_hot_shipments: 'Нет горящих отгрузок',
   no_cash_gap: 'Кассовых разрывов не обнаружено',
+  margin_chart: 'Маржинальность по заказам',
 
   // --- Заказы ---
   search_placeholder: 'Поиск по ID или названию...',
@@ -34,7 +37,7 @@ const ru: TranslationMap = {
   import_description: 'Введите ID заказа из системы 1С для импорта данных',
   import_id_placeholder: 'Введите ID заказа (например: ORD-042)',
   loading: 'Загрузка...',
-  download: 'Загрузить',
+  save: 'Добавить',
   cancel: 'Отмена',
   id: 'ID',
   order_name: 'Название',
@@ -158,6 +161,7 @@ const ukr: TranslationMap = {
   dashboard: 'Дашборд',
   orders: 'Замовлення',
   payment_calendar: 'Платіжний календар',
+  settings: 'Налаштування',
   finance: 'Фінанси',
   furniture_manufacturing: 'Виробництво меблів',
 
@@ -167,12 +171,14 @@ const ukr: TranslationMap = {
   solve_problem: 'Вирішити проблему',
   active_orders: 'Активних замовлень',
   expected_profit: 'Очікуваний прибуток',
+  month_payments: 'Виплати місяця',
   week_payments: 'Виплати на цьому тижні',
   hot_shipments: 'Гарячі відправлення',
   order_funnel: 'Воронка замовлень',
   recent_activity: 'Остання активність',
   no_hot_shipments: 'Немає гарячих відправлень',
   no_cash_gap: 'Касових розривів не виявлено',
+  margin_chart: 'Маржинальність за замовленнями',
 
   // --- Замовлення ---
   search_placeholder: 'Пошук за ID або назвою...',
@@ -181,7 +187,7 @@ const ukr: TranslationMap = {
   import_description: 'Введіть ID замовлення з системи 1С для імпорту даних',
   import_id_placeholder: 'Введіть ID замовлення (наприклад: ORD-042)',
   loading: 'Завантаження...',
-  download: 'Завантажити',
+  save: 'Додати',
   cancel: 'Скасувати',
   id: 'ID',
   order_name: 'Назва',

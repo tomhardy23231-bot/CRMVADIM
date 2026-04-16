@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 // ============================================================
 
 export function Header() {
-  const { breadcrumbs, lang, toggleLang, tr, orders, setSelectedOrderId, setCurrentPage } = useCRM();
+  const { breadcrumbs, lang, toggleLang, tr, orders, setSelectedOrderId, setCurrentPage, selectedOrderId, currentUser } = useCRM();
   const [syncing, setSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -71,7 +71,7 @@ export function Header() {
   };
 
   return (
-    <header className="h-14 border-b border-gray-200 bg-white px-4 lg:px-6 flex items-center justify-between shrink-0">
+    <header className="h-12 border-b border-gray-200/80 bg-white/80 backdrop-blur-md px-4 lg:px-6 flex items-center justify-between shrink-0 sticky top-0 z-50">
       {/* Левая часть: Хлебные крошки */}
       <div className="flex items-center gap-1.5 text-sm">
         {breadcrumbs.map((item, i) => (
@@ -92,9 +92,10 @@ export function Header() {
         ))}
       </div>
 
-      {/* Центр: Глобальный поиск */}
-      <div className="hidden md:flex relative flex-1 max-w-md mx-6" ref={searchRef}>
-        <div className="relative w-full">
+      {/* Центр: Глобальный поиск (скрываем внутри карточки заказа) */}
+      {!selectedOrderId && (
+        <div className="hidden md:flex relative flex-1 max-w-md mx-6" ref={searchRef}>
+          <div className="relative w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <Input
             placeholder={tr('global_search')}
@@ -162,6 +163,7 @@ export function Header() {
           </div>
         )}
       </div>
+      )}
 
       {/* Правая часть */}
       <div className="flex items-center gap-3">
@@ -214,11 +216,11 @@ export function Header() {
         {/* Аватарка пользователя */}
         <Avatar className="h-8 w-8 border border-gray-200">
           <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs font-semibold">
-            <User className="w-4 h-4" />
+            {currentUser ? `${currentUser.firstName[0]}${currentUser.lastName[0]}` : <User className="w-4 h-4" />}
           </AvatarFallback>
         </Avatar>
         <span className="text-sm text-gray-700 font-medium hidden md:inline">
-          {tr('manager')}
+          {currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : tr('manager')}
         </span>
       </div>
     </header>
