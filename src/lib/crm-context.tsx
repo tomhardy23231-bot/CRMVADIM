@@ -152,6 +152,7 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
 
     const defaultWeek = generateWeekOptions('ru')[0].value;
     const budgetItems = [
+      // === Системные статьи (скрыты из BudgetTab, используются для маржи) ===
       {
         name: 'Оплата от клиента',
         plan: orderAmount,
@@ -168,6 +169,20 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
         hasTranches: true,
         tranches: [{ amount: plannedCost, month: defaultWeek }],
       },
+      // === Стандартные статьи расходов ===
+      { name: 'Проектирование', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Закупные', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Сборка', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Погрузка', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Доставка', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Разгрузка', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Монтаж', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Бонус конструктора', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Налоги', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Бонус менеджера', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      { name: 'Бонус тендера', plan: 0, fact: 0, isIncome: false, hasTranches: false },
+      // === Стандартная статья доходов ===
+      { name: 'Прибыль', plan: 0, fact: 0, isIncome: true, hasTranches: false },
     ];
 
     const newOrder = {

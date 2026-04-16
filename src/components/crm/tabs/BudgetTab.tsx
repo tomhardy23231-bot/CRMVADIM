@@ -507,10 +507,46 @@ export function BudgetTab({ order }: BudgetTabProps) {
               {newItemIsIncome ? tr('income_item') : tr('expense_item')}
             </DialogTitle>
             <DialogDescription>
-              {newItemIsIncome ? tr('income_name_placeholder') : tr('expense_name_placeholder')}
+              Выберите из шаблонов или введите своё название
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 space-y-4">
+            {/* Быстрые шаблоны */}
+            <div className="flex flex-wrap gap-1.5">
+              {(newItemIsIncome
+                ? ['Прибыль', 'Допоплата', 'Бонус', 'Возврат']
+                : ['Проектирование', 'Закупные', 'Сборка', 'Погрузка', 'Доставка', 'Разгрузка', 'Монтаж', 'Бонус конструктора', 'Налоги', 'Бонус менеджера', 'Бонус тендера', 'Логистика', 'Аренда техники', 'Упаковка', 'Страхование']
+              ).filter(tpl => {
+                // Не показываем шаблоны если статья с таким именем уже есть в заказе
+                return !order.budgetItems.some(b => b.name === tpl);
+              }).map(tpl => (
+                <button
+                  key={tpl}
+                  onClick={() => {
+                    addBudgetItem(order.id, tpl, newItemIsIncome);
+                    setAddDialogOpen(false);
+                    toast.success(tr('toast_budget_item_added'));
+                  }}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-150 hover:-translate-y-0.5',
+                    newItemIsIncome
+                      ? 'border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                      : 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                  )}
+                >
+                  + {tpl}
+                </button>
+              ))}
+            </div>
+
+            {/* Разделитель */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-gray-200" />
+              <span className="text-xs text-gray-400">или своё название</span>
+              <div className="flex-1 h-px bg-gray-200" />
+            </div>
+
+            {/* Ручной ввод */}
             <Input
               placeholder={newItemIsIncome ? tr('income_name_placeholder') : tr('expense_name_placeholder')}
               value={newItemName}
