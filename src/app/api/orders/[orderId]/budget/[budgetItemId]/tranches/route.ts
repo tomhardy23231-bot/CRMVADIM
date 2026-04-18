@@ -11,6 +11,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ bud
         budgetItemId: budgetItemId,
         amount: body.amount || 0,
         month: body.month,
+        plannedDate: body.plannedDate || null,
       },
     });
     return NextResponse.json(newTranche, { status: 201 });
@@ -20,15 +21,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ bud
 }
 
 // PUT /api/orders/[orderId]/budget/[budgetItemId]/tranches
-export async function PUT(request: Request) {
+export async function PUT(request: Request, context: { params: Promise<{ orderId: string, budgetItemId: string }> }) {
   try {
     const body = await request.json();
+    const updateData: any = {};
+    if (body.amount !== undefined) updateData.amount = body.amount;
+    if (body.month !== undefined) updateData.month = body.month;
+    if (body.plannedDate !== undefined) updateData.plannedDate = body.plannedDate;
+    
     const updated = await prisma.tranche.update({
       where: { id: body.id },
-      data: {
-        amount: body.amount,
-        month: body.month,
-      },
+      data: updateData,
     });
     return NextResponse.json(updated);
   } catch (error) {
@@ -37,7 +40,7 @@ export async function PUT(request: Request) {
 }
 
 // DELETE /api/orders/[orderId]/budget/[budgetItemId]/tranches
-export async function DELETE(request: Request) {
+export async function DELETE(request: Request, context: { params: Promise<{ orderId: string, budgetItemId: string }> }) {
   try {
     const url = new URL(request.url);
     const id = url.searchParams.get('id');

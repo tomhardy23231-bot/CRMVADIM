@@ -3,7 +3,7 @@
 // ============================================================
 
 /** Возможные статусы заказа */
-export type OrderStatus = 'Новый' | 'В производстве' | 'Сборка' | 'Отгружен';
+export type OrderStatus = 'Проектирование' | 'Закупка материалов' | 'В производстве' | 'Сборка' | 'Доставка' | 'Отгружен' | 'Рекламации' | 'Выполнен' | 'Оплачен';
 
 /** Навигационные страницы приложения */
 export type PageId = 'dashboard' | 'orders' | 'payment-calendar' | 'settings';
@@ -35,7 +35,8 @@ export interface UserInfo {
 export interface Tranche {
   id: string;
   amount: number;       // Сумма транша (₴)
-  month: string;        // Год-Месяц (YYYY-MM), например '2026-05'
+  month: string;        // Legacy week format (YYYY-Wxx::DD.MM-DD.MM)
+  plannedDate?: string; // ISO дата (YYYY-MM-DD) — точная запланированная дата
 }
 
 /** Статья расходов/доходов в бюджете */
@@ -75,6 +76,7 @@ export interface Payment1C {
 /** Заказ */
 export interface Order {
   id: string;                    // ID заказа (TNDR-001)
+  externalId?: string;           // ID из 1С
   name: string;                  // Название
   status: OrderStatus;
   orderAmount: number;           // Сумма заказа (₴)
@@ -84,6 +86,7 @@ export interface Order {
   productionStart: string;       // Старт производства
   assemblyStart: string;         // Начало сборки
   shippingStart: string;         // Начало отгрузки
+  expectedPaymentDate?: string;  // Ожидаемая дата оплаты клиентом (ISO)
   budgetItems: BudgetItem[];     // Дополнительные расходы
   specItems: SpecItem[];         // Спецификация из 1С
   payments?: Payment1C[];        // Исходные документы оплат из 1С

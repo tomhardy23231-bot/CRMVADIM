@@ -242,33 +242,99 @@ export function Dashboard() {
     <div className="space-y-6">
       {/* --- Критический Алерт о кассовом разрыве --- */}
       {cashGapAlert && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-5 h-5 text-red-600" />
+        <>
+          {/* МОБИЛКА: Компактный баннер в одну строку */}
+          <div className="lg:hidden flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 animate-in fade-in duration-500">
+            <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
             </div>
-            <div>
-              <p className="text-sm font-semibold text-red-800">
-                {tr('cash_gap_alert')}: {formatWeekStr(cashGapAlert.weekStr, lang as 'ru' | 'ukr').replace('\n', ' ')}
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-bold text-red-800 leading-tight truncate">
+                {tr('cash_gap_alert')}: <span className="text-red-600">{formatWeekStr(cashGapAlert.weekStr, lang as 'ru' | 'ukr').replace('\n', ' ')}</span>
               </p>
-              <p className="text-sm text-red-600 mt-0.5">
-                {tr('deficit')}: <span className="font-bold">{formatUAH(cashGapAlert.deficit)}</span>
+              <p className="text-[10px] text-red-500 font-semibold">
+                {tr('deficit')}: {formatUAH(cashGapAlert.deficit)}
               </p>
             </div>
+            <button
+              onClick={handleSolveCashGap}
+              className="shrink-0 bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded-lg active:bg-red-700 transition-colors flex items-center gap-1"
+            >
+              Решить <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
-          <Button
-            onClick={handleSolveCashGap}
-            size="sm"
-            className="bg-red-600 hover:bg-red-700 text-white shrink-0 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-          >
-            {tr('solve_problem')}
-            <ArrowRight className="w-4 h-4 ml-1.5" />
-          </Button>
-        </div>
+
+          {/* ДЕСКТОП: Полный алерт */}
+          <div className="hidden lg:flex bg-red-50 border border-red-200 rounded-xl p-4 items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-red-800">
+                  {tr('cash_gap_alert')}: {formatWeekStr(cashGapAlert.weekStr, lang as 'ru' | 'ukr').replace('\n', ' ')}
+                </p>
+                <p className="text-sm text-red-600 mt-0.5">
+                  {tr('deficit')}: <span className="font-bold">{formatUAH(cashGapAlert.deficit)}</span>
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={handleSolveCashGap}
+              size="sm"
+              className="bg-red-600 hover:bg-red-700 text-white shrink-0 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            >
+              {tr('solve_problem')}
+              <ArrowRight className="w-4 h-4 ml-1.5" />
+            </Button>
+          </div>
+        </>
       )}
 
-      {/* --- Карточки метрик --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* === МОБИЛКА: Компактные метрики === */}
+      <div className="lg:hidden flex flex-col gap-2">
+        {/* Строка 1: Счётчик + 2 финансовых блока */}
+        <div className="flex items-stretch gap-2">
+          {/* Активные заказы: квадратик-счётчик */}
+          <div className="flex flex-col items-center justify-center w-[70px] shrink-0 bg-white border border-gray-100 rounded-xl shadow-sm py-2.5 px-1">
+            <ClipboardList className="w-4 h-4 text-gray-400 mb-1" />
+            <span className="text-2xl font-black text-gray-800 leading-none">{metrics.activeCount}</span>
+            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mt-1 text-center leading-tight">{tr('active_orders')}</span>
+          </div>
+
+          {/* Ожидаемая прибыль + Выплаты в 2 строки */}
+          <div className="flex flex-col gap-2 flex-1 min-w-0">
+            {/* Ожидаемая прибыль */}
+            <div className="flex items-center gap-2.5 bg-emerald-50/70 border border-emerald-100 rounded-xl px-3 py-2 flex-1">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-4 h-4 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[9px] font-bold text-emerald-600/70 uppercase tracking-wide leading-none">{tr('expected_profit')}</p>
+                <p className={cn('text-base font-black tracking-tight leading-tight mt-0.5', metrics.expectedProfit >= 0 ? 'text-emerald-700' : 'text-red-600')}>
+                  {formatUAH(metrics.expectedProfit)}
+                </p>
+              </div>
+            </div>
+
+            {/* Выплаты месяца */}
+            <div className="flex items-center gap-2.5 bg-blue-50/70 border border-blue-100 rounded-xl px-3 py-2 flex-1">
+              <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
+                <Wallet className="w-4 h-4 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[9px] font-bold text-blue-500/70 uppercase tracking-wide leading-none">{tr('month_payments') || 'Выплаты месяца'}</p>
+                <p className="text-base font-black text-blue-900 tracking-tight leading-tight mt-0.5">
+                  {formatUAH(metrics.monthPayments)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* === ДЕСКТОП: Карточки метрик (без изменений) === */}
+      <div className="hidden sm:grid grid-cols-3 gap-4">
         <Card className="bg-gradient-to-br from-white to-gray-50/50 border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
@@ -428,62 +494,103 @@ export function Dashboard() {
               {tr('margin_chart') || 'Маржинальность по заказам'}
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-0">
-            <div className="h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={orders.map(o => {
-                    const expenseBudget = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
-                    const margin = calcMargin(o.orderAmount, expenseBudget);
-                    return {
-                      name: o.name.length > 18 ? o.name.slice(0, 18) + '…' : o.name,
-                      margin,
-                      fill: margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444',
-                    };
-                  })}
-                  margin={{ top: 5, right: 20, left: 0, bottom: 50 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
-                    angle={-35}
-                    textAnchor="end"
-                    height={60}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
-                    unit="%"
-                    domain={[0, 'auto']}
-                  />
-                  <RechartsTooltip
-                    contentStyle={{
-                      borderRadius: '8px',
-                      border: '1px solid #e5e7eb',
-                      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-                      fontSize: '12px',
-                    }}
-                    formatter={(value: number) => [`${value}%`, 'Маржа']}
-                  />
-                  <Bar
-                    dataKey="margin"
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={48}
-                  >
-                    {orders.map((_, index) => {
-                      const expenseBudget = orders[index].budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
-                      const margin = calcMargin(orders[index].orderAmount, expenseBudget);
-                      const color = margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444';
-                      return <Cell key={`cell-${index}`} fill={color} />;
+          <CardContent className="pt-0 pb-3 lg:pb-6">
+            {/* --- ДЕСКТОП: Графики --- */}
+            <div className="hidden lg:block">
+              <div className="h-[260px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={orders.map(o => {
+                      const expenseBudget = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
+                      const margin = calcMargin(o.orderAmount, expenseBudget);
+                      return {
+                        name: o.name.length > 18 ? o.name.slice(0, 18) + '…' : o.name,
+                        margin,
+                        fill: margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444',
+                      };
                     })}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                    margin={{ top: 5, right: 20, left: 0, bottom: 50 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: '#9ca3af' }}
+                      angle={-35}
+                      textAnchor="end"
+                      height={60}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#9ca3af' }}
+                      unit="%"
+                      domain={[0, 'auto']}
+                    />
+                    <RechartsTooltip
+                      contentStyle={{
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb',
+                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                        fontSize: '12px',
+                      }}
+                      formatter={(value: number) => [`${value}%`, 'Маржа']}
+                    />
+                    <Bar
+                      dataKey="margin"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={48}
+                    >
+                      {orders.map((_, index) => {
+                        const expenseBudget = orders[index].budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
+                        const margin = calcMargin(orders[index].orderAmount, expenseBudget);
+                        const color = margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444';
+                        return <Cell key={`cell-${index}`} fill={color} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex items-center justify-center gap-4 mt-2 text-[11px] text-gray-500">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> ≥ 20% — здоровая</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 10-20% — средняя</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> &lt; 10% — низкая</span>
+              </div>
             </div>
-            <div className="flex items-center justify-center gap-4 mt-2 text-[11px] text-gray-500">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> ≥ 20% — здоровая</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 10-20% — средняя</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> &lt; 10% — низкая</span>
+
+            {/* --- МОБИЛЬНЫЙ: Прогресс-бары --- */}
+            <div className="lg:hidden flex flex-col gap-3.5 mt-2 px-1 max-h-[350px] overflow-y-auto custom-scrollbar">
+              {orders
+                .map(o => {
+                  const expenseBudget = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
+                  const margin = calcMargin(o.orderAmount, expenseBudget);
+                  return { id: o.id, name: o.name, margin };
+                })
+                .sort((a, b) => b.margin - a.margin)
+                .map((item) => {
+                  const m = item.margin;
+                  const colorClass = m >= 20 ? 'bg-emerald-500' : m >= 10 ? 'bg-amber-500' : 'bg-red-500';
+                  const bgClass = m >= 20 ? 'bg-emerald-50/80' : m >= 10 ? 'bg-amber-50/80' : 'bg-red-50/80';
+                  const textClass = m >= 20 ? 'text-emerald-700' : m >= 10 ? 'text-amber-700' : 'text-red-700';
+                  const borderClass = m >= 20 ? 'border-emerald-200' : m >= 10 ? 'border-amber-200' : 'border-red-200';
+
+                  return (
+                    <div key={item.id} className="flex flex-col gap-1.5 cursor-pointer active:scale-[0.98] transition-transform" onClick={() => setSelectedOrderId(item.id)}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-gray-800 pr-3 line-clamp-1">{item.name}</span>
+                        <span className={cn("text-[11px] font-black px-2 py-0.5 rounded-md border shrink-0", bgClass, textClass, borderClass)}>
+                          {m}%
+                        </span>
+                      </div>
+                      <div className="h-2.5 w-full bg-gray-100/80 rounded-full overflow-hidden border border-black/5">
+                        <div className={cn("h-full rounded-full transition-all duration-700 ease-out", colorClass)} style={{ width: `${Math.min(Math.max(m, 0), 100)}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-500 bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                <span className="flex items-center gap-1 font-medium"><span className="w-2 h-2 rounded-full bg-emerald-500" /> ≥ 20% (хорошо)</span>
+                <span className="flex items-center gap-1 font-medium"><span className="w-2 h-2 rounded-full bg-amber-500" /> 10-20% (норма)</span>
+                <span className="flex items-center gap-1 font-medium"><span className="w-2 h-2 rounded-full bg-red-500" /> &lt; 10% (мало)</span>
+              </div>
             </div>
           </CardContent>
         </Card>
