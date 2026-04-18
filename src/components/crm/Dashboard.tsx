@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH, formatWeekStr, generateWeekOptions, calcMargin } from '@/lib/crm-utils';
+import { formatUAH, formatWeekStr, generateWeekOptions, calcMargin, calcSmartHybridCost } from '@/lib/crm-utils';
 import {
   AlertTriangle,
   TrendingUp,
@@ -50,10 +50,15 @@ import {
 
 /** Цветовой маппинг статусов */
 const statusColors: Record<string, string> = {
-  'Новый': 'bg-blue-100 text-blue-700',
+  'Проектирование': 'bg-slate-100 text-slate-700',
+  'Закупка материалов': 'bg-cyan-100 text-cyan-700',
   'В производстве': 'bg-amber-100 text-amber-700',
   'Сборка': 'bg-purple-100 text-purple-700',
-  'Отгружен': 'bg-emerald-100 text-emerald-700',
+  'Доставка': 'bg-indigo-100 text-indigo-700',
+  'Отгружен': 'bg-blue-100 text-blue-700',
+  'Рекламации': 'bg-red-100 text-red-700',
+  'Выполнен': 'bg-emerald-100 text-emerald-700',
+  'Оплачен': 'bg-green-100 text-green-700',
 };
 
 /** Цвета для PieChart */
@@ -64,15 +69,15 @@ export function Dashboard() {
 
   // --- Динамические метрики ---
   const metrics = useMemo(() => {
-    const activeOrders = orders.filter((o) => o.status !== 'Отгружен');
-    const activeOrdersForCashGap = orders.filter((o) => o.status !== 'Отгружен');
+    const activeOrders = orders.filter((o) => !['Выполнен', 'Оплачен'].includes(o.status));
+    const activeOrdersForCashGap = orders.filter((o) => !['Выполнен', 'Оплачен'].includes(o.status));
     const activeCount = activeOrders.length;
 
-    // Ожидаемая прибыль: orderAmount - все плановые расходы
+    // Ожидаемая прибыль: orderAmount - гибридная себестоимость
     let expectedProfit = 0;
     for (const o of activeOrders) {
-      const budgetExpenseSum = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
-      expectedProfit += o.orderAmount - budgetExpenseSum;
+      const hybridCost = calcSmartHybridCost(o);
+      expectedProfit += o.orderAmount - hybridCost;
     }
 
     // Выплаты в текущем месяце
@@ -98,7 +103,7 @@ export function Dashboard() {
 
   // --- Кассовый разрыв (прогноз на 12 недель) ---
   const cashGapAlert = (() => {
-    const activeOrdersForCashGap = orders.filter((o) => o.status !== 'Отгружен');
+    const activeOrdersForCashGap = orders.filter((o) => !['Выполнен', 'Оплачен'].includes(o.status));
     const displayWeeks = generateWeekOptions(lang).map(o => o.value);
 
     const weekData: Record<string, { income: number; expense: number }> = {};
@@ -158,7 +163,7 @@ export function Dashboard() {
       // Горящие дедлайны (в пределах 7 дней)
       const dl = new Date(o.deadline);
       const deadlineDiff = Math.floor((dl.getTime() - now.getTime()) / 86400000);
-      if (deadlineDiff >= 0 && deadlineDiff <= 7 && o.status !== 'Отгружен') {
+      if (deadlineDiff >= 0 && deadlineDiff <= 7 && !['Выполнен', 'Оплачен'].includes(o.status)) {
         items.push({
           id: `deadline-${o.id}`,
           icon: Flame,
@@ -222,7 +227,7 @@ export function Dashboard() {
 
   const hotShipments = orders.filter((o) => {
     const dl = new Date(o.deadline);
-    return dl <= twoWeeksLater && o.status !== 'Отгружен';
+    return dl <= twoWeeksLater && !['Выполнен', 'Оплачен'].includes(o.status);
   });
 
   // Данные для PieChart — распределение по статусам
@@ -239,16 +244,16 @@ export function Dashboard() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 lg:space-y-6">
       {/* --- Критический Алерт о кассовом разрыве --- */}
       {cashGapAlert && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 lg:p-4 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-5 h-5 text-red-600" />
+            <div className="w-9 h-9 lg:w-10 lg:h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-4.5 h-4.5 lg:w-5 lg:h-5 text-red-600" />
             </div>
-            <div>
-              <p className="text-sm font-semibold text-red-800">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-red-800 leading-tight">
                 {tr('cash_gap_alert')}: {formatWeekStr(cashGapAlert.weekStr, lang as 'ru' | 'ukr').replace('\n', ' ')}
               </p>
               <p className="text-sm text-red-600 mt-0.5">
@@ -259,7 +264,7 @@ export function Dashboard() {
           <Button
             onClick={handleSolveCashGap}
             size="sm"
-            className="bg-red-600 hover:bg-red-700 text-white shrink-0 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            className="bg-red-600 hover:bg-red-700 text-white shrink-0 transition-all duration-200 w-full sm:w-auto sm:self-end"
           >
             {tr('solve_problem')}
             <ArrowRight className="w-4 h-4 ml-1.5" />
@@ -267,60 +272,60 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* --- Карточки метрик --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="bg-gradient-to-br from-white to-gray-50/50 border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group">
-          <CardContent className="p-5">
+      {/* --- Карточки метрик — горизонтальный скролл на мобильном --- */}
+      <div className="flex gap-3 overflow-x-auto pb-1 lg:grid lg:grid-cols-3 lg:gap-4 lg:overflow-visible mobile-hide-scrollbar -mx-3 px-3 lg:mx-0 lg:px-0">
+        <Card className="bg-gradient-to-br from-white to-gray-50/50 border-gray-100 shadow-sm hover:shadow-md transition-all duration-300 group min-w-[200px] lg:min-w-0 shrink-0 lg:shrink">
+          <CardContent className="p-4 lg:p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest pl-1">
+                <p className="text-[10px] lg:text-[11px] font-bold text-gray-400 uppercase tracking-widest">
                   {tr('active_orders')}
                 </p>
-                <p className="text-4xl font-black text-gray-800 mt-2 pl-1 tracking-tight group-hover:text-emerald-700 transition-colors">
+                <p className="text-3xl lg:text-4xl font-black text-gray-800 mt-1.5 lg:mt-2 tracking-tight group-hover:text-emerald-700 transition-colors">
                   {metrics.activeCount}
                 </p>
               </div>
-              <div className="w-14 h-14 rounded-2xl bg-white shadow-[0_4px_12px_rgba(0,0,0,0.05)] border border-gray-100 flex items-center justify-center group-hover:scale-105 transition-transform">
-                <ClipboardList className="w-6 h-6 text-gray-600 group-hover:text-emerald-600 transition-colors" />
+              <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-white shadow-[0_4px_12px_rgba(0,0,0,0.05)] border border-gray-100 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <ClipboardList className="w-5 h-5 lg:w-6 lg:h-6 text-gray-600 group-hover:text-emerald-600 transition-colors" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-emerald-50/50 to-white border-emerald-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group">
-          <CardContent className="p-5">
+        <Card className="bg-gradient-to-br from-emerald-50/50 to-white border-emerald-100 shadow-sm hover:shadow-md transition-all duration-300 group min-w-[220px] lg:min-w-0 shrink-0 lg:shrink">
+          <CardContent className="p-4 lg:p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold text-emerald-600/70 uppercase tracking-widest pl-1">
+                <p className="text-[10px] lg:text-[11px] font-bold text-emerald-600/70 uppercase tracking-widest">
                   {tr('expected_profit')}
                 </p>
                 <p className={cn(
-                  'text-4xl font-black mt-2 pl-1 tracking-tight',
+                  'text-2xl lg:text-4xl font-black mt-1.5 lg:mt-2 tracking-tight',
                   metrics.expectedProfit >= 0 ? 'text-emerald-700' : 'text-red-600'
                 )}>
                   {formatUAH(metrics.expectedProfit)}
                 </p>
               </div>
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-emerald-400 to-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.3)] border border-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-                <TrendingUp className="w-6 h-6 text-white" />
+              <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-gradient-to-b from-emerald-400 to-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.3)] border border-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <TrendingUp className="w-5 h-5 lg:w-6 lg:h-6 text-white" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-blue-50/50 to-white border-blue-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group">
-          <CardContent className="p-5">
+        <Card className="bg-gradient-to-br from-blue-50/50 to-white border-blue-100 shadow-sm hover:shadow-md transition-all duration-300 group min-w-[220px] lg:min-w-0 shrink-0 lg:shrink">
+          <CardContent className="p-4 lg:p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold text-blue-500/70 uppercase tracking-widest pl-1">
+                <p className="text-[10px] lg:text-[11px] font-bold text-blue-500/70 uppercase tracking-widest">
                   {tr('month_payments') || 'Выплаты месяца'}
                 </p>
-                <p className="text-4xl font-black text-blue-900 mt-2 pl-1 tracking-tight">
+                <p className="text-2xl lg:text-4xl font-black text-blue-900 mt-1.5 lg:mt-2 tracking-tight">
                   {formatUAH(metrics.monthPayments)}
                 </p>
               </div>
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-blue-400 to-blue-500 shadow-[0_4px_12px_rgba(59,130,246,0.3)] border border-blue-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-                <Wallet className="w-6 h-6 text-white" />
+              <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-gradient-to-b from-blue-400 to-blue-500 shadow-[0_4px_12px_rgba(59,130,246,0.3)] border border-blue-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Wallet className="w-5 h-5 lg:w-6 lg:h-6 text-white" />
               </div>
             </div>
           </CardContent>
@@ -332,21 +337,21 @@ export function Dashboard() {
         {/* Воронка */}
         <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Package className="w-4.5 h-4.5 text-gray-500" />
+            <CardTitle className="flex items-center gap-2 text-sm lg:text-base font-semibold">
+              <Package className="w-4 h-4 lg:w-4.5 lg:h-4.5 text-gray-500" />
               {tr('order_funnel')}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="h-[220px]">
+            <div className="h-[200px] lg:h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={statusCounts}
                     cx="50%"
                     cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
+                    innerRadius={40}
+                    outerRadius={70}
                     paddingAngle={4}
                     dataKey="value"
                     strokeWidth={0}
@@ -368,7 +373,7 @@ export function Dashboard() {
                     iconType="circle"
                     iconSize={8}
                     formatter={(value) => (
-                      <span className="text-xs text-gray-600">{value}</span>
+                      <span className="text-[10px] lg:text-xs text-gray-600">{value}</span>
                     )}
                   />
                 </PieChart>
@@ -380,13 +385,13 @@ export function Dashboard() {
         {/* Недавняя активность */}
         <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Activity className="w-4.5 h-4.5 text-gray-500" />
+            <CardTitle className="flex items-center gap-2 text-sm lg:text-base font-semibold">
+              <Activity className="w-4 h-4 lg:w-4.5 lg:h-4.5 text-gray-500" />
               {tr('recent_activity')}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+            <div className="space-y-2.5 lg:space-y-3 max-h-[200px] lg:max-h-[220px] overflow-y-auto pr-1 mobile-scroll">
               {activityItems.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                   <Activity className="w-8 h-8 text-gray-200 mb-2" />
@@ -398,15 +403,15 @@ export function Dashboard() {
                 return (
                   <div
                     key={item.id}
-                    className="flex items-start gap-3 group cursor-pointer hover:bg-gray-50 -mx-2 px-2 py-1.5 rounded-lg transition-colors"
+                    className="flex items-start gap-2.5 lg:gap-3 group cursor-pointer active:bg-gray-50 hover:bg-gray-50 -mx-2 px-2 py-1.5 rounded-lg transition-colors"
                     onClick={() => setSelectedOrderId(item.orderId)}
                   >
                     <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5', item.color)}>
                       <Icon className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-700 leading-snug">{item.text}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
+                      <p className="text-xs lg:text-sm text-gray-700 leading-snug line-clamp-2">{item.text}</p>
+                      <p className="text-[10px] lg:text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {item.time}
                       </p>
@@ -423,38 +428,39 @@ export function Dashboard() {
       {orders.length > 0 && (
         <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <TrendingUp className="w-4.5 h-4.5 text-emerald-500" />
+            <CardTitle className="flex items-center gap-2 text-sm lg:text-base font-semibold">
+              <TrendingUp className="w-4 h-4 lg:w-4.5 lg:h-4.5 text-emerald-500" />
               {tr('margin_chart') || 'Маржинальность по заказам'}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="h-[260px]">
+            <div className="h-[220px] lg:h-[260px] -mx-2 lg:mx-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={orders.map(o => {
-                    const expenseBudget = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
-                    const margin = calcMargin(o.orderAmount, expenseBudget);
+                    const smartHybridCost = calcSmartHybridCost(o);
+                    const margin = calcMargin(o.orderAmount, smartHybridCost);
                     return {
-                      name: o.name.length > 18 ? o.name.slice(0, 18) + '…' : o.name,
+                      name: o.name.length > 12 ? o.name.slice(0, 12) + '…' : o.name,
                       margin,
                       fill: margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444',
                     };
                   })}
-                  margin={{ top: 5, right: 20, left: 0, bottom: 50 }}
+                  margin={{ top: 5, right: 10, left: -10, bottom: 50 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                   <XAxis
                     dataKey="name"
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
                     angle={-35}
                     textAnchor="end"
                     height={60}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
+                    tick={{ fontSize: 10, fill: '#9ca3af' }}
                     unit="%"
                     domain={[0, 'auto']}
+                    width={35}
                   />
                   <RechartsTooltip
                     contentStyle={{
@@ -471,8 +477,8 @@ export function Dashboard() {
                     maxBarSize={48}
                   >
                     {orders.map((_, index) => {
-                      const expenseBudget = orders[index].budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
-                      const margin = calcMargin(orders[index].orderAmount, expenseBudget);
+                      const smartHybridCost = calcSmartHybridCost(orders[index]);
+                      const margin = calcMargin(orders[index].orderAmount, smartHybridCost);
                       const color = margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444';
                       return <Cell key={`cell-${index}`} fill={color} />;
                     })}
@@ -480,10 +486,10 @@ export function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex items-center justify-center gap-4 mt-2 text-[11px] text-gray-500">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> ≥ 20% — здоровая</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 10-20% — средняя</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> &lt; 10% — низкая</span>
+            <div className="flex items-center justify-center gap-3 lg:gap-4 mt-2 text-[10px] lg:text-[11px] text-gray-500 flex-wrap">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> ≥ 20%</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 10-20%</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500" /> &lt; 10%</span>
             </div>
           </CardContent>
         </Card>
@@ -492,58 +498,91 @@ export function Dashboard() {
       {/* --- Горящие отгрузки --- */}
       <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Flame className="w-4.5 h-4.5 text-orange-500" />
+          <CardTitle className="flex items-center gap-2 text-sm lg:text-base font-semibold">
+            <Flame className="w-4 h-4 lg:w-4.5 lg:h-4.5 text-orange-500" />
             {tr('hot_shipments')}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {hotShipments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-              <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-3">
-                <Flame className="w-7 h-7 text-gray-300" />
+            <div className="flex flex-col items-center justify-center py-10 lg:py-12 text-gray-400">
+              <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-3">
+                <Flame className="w-6 h-6 lg:w-7 lg:h-7 text-gray-300" />
               </div>
               <p className="text-sm font-medium">{tr('no_hot_shipments')}</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-xs font-medium text-gray-500">ID</TableHead>
-                  <TableHead className="text-xs font-medium text-gray-500">{tr('order_name')}</TableHead>
-                  <TableHead className="text-xs font-medium text-gray-500">{tr('status')}</TableHead>
-                  <TableHead className="text-xs font-medium text-gray-500">{tr('deadline')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              {/* Мобильное представление — карточки */}
+              <div className="lg:hidden space-y-2 px-3 pb-3">
                 {hotShipments.map((order) => (
-                  <TableRow
+                  <div
                     key={order.id}
-                    className="cursor-pointer hover:bg-gray-50 transition-all duration-150"
+                    className="flex items-center gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-100 cursor-pointer active:bg-gray-100 transition-colors"
                     onClick={() => setSelectedOrderId(order.id)}
                   >
-                    <TableCell className="font-mono text-xs font-semibold text-gray-700">
-                      {order.id}
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-800 max-w-[280px] truncate">
-                      {order.name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={statusColors[order.status] || 'bg-gray-100 text-gray-700'}
-                      >
-                        {order.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600 flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                      {new Date(order.deadline).toLocaleDateString('ru-RU')}
-                    </TableCell>
-                  </TableRow>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono text-[10px] font-bold text-gray-500">{order.id}</span>
+                        <Badge
+                          variant="secondary"
+                          className={cn('text-[10px] px-1.5', statusColors[order.status] || 'bg-gray-100 text-gray-700')}
+                        >
+                          {order.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-gray-800 font-medium truncate">{order.name}</p>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-gray-500 shrink-0">
+                      <Calendar className="w-3 h-3 text-gray-400" />
+                      {new Date(order.deadline).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+                    </div>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+
+              {/* Десктопное представление — таблица */}
+              <div className="hidden lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="text-xs font-medium text-gray-500">ID</TableHead>
+                      <TableHead className="text-xs font-medium text-gray-500">{tr('order_name')}</TableHead>
+                      <TableHead className="text-xs font-medium text-gray-500">{tr('status')}</TableHead>
+                      <TableHead className="text-xs font-medium text-gray-500">{tr('deadline')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {hotShipments.map((order) => (
+                      <TableRow
+                        key={order.id}
+                        className="cursor-pointer hover:bg-gray-50 transition-all duration-150"
+                        onClick={() => setSelectedOrderId(order.id)}
+                      >
+                        <TableCell className="font-mono text-xs font-semibold text-gray-700">
+                          {order.id}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-800 max-w-[280px] truncate">
+                          {order.name}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            className={statusColors[order.status] || 'bg-gray-100 text-gray-700'}
+                          >
+                            {order.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600 flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                          {new Date(order.deadline).toLocaleDateString('ru-RU')}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

@@ -4,7 +4,6 @@ import React, { useEffect } from 'react';
 import { CRMProvider, useCRM } from '@/lib/crm-context';
 import { SessionProvider, useSession } from 'next-auth/react';
 import { Sidebar } from '@/components/crm/Sidebar';
-import { MobileSidebar } from '@/components/crm/MobileSidebar';
 import { Header } from '@/components/crm/Header';
 import { Dashboard } from '@/components/crm/Dashboard';
 import { OrdersList } from '@/components/crm/OrdersList';
@@ -12,6 +11,7 @@ import { OrderCard } from '@/components/crm/OrderCard';
 import { PaymentCalendar } from '@/components/crm/PaymentCalendar';
 import { Settings } from '@/components/crm/Settings';
 import { DashboardSkeleton, OrdersListSkeleton } from '@/components/crm/LoadingSkeleton';
+import { MobileBottomNav } from '@/components/crm/MobileBottomNav';
 import type { UserInfo } from '@/lib/crm-types';
 
 // ============================================================
@@ -74,20 +74,26 @@ function CRMShell() {
   };
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className="min-h-screen flex bg-slate-200">
       {/* Десктопный сайдбар */}
       <Sidebar />
 
       {/* Основная область */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        {/* Мобильный хедер + сайдбар */}
-        <div className="lg:hidden flex items-center gap-2 px-4 h-14 border-b border-gray-200 bg-white">
-          <MobileSidebar />
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-gray-900 flex items-center justify-center shadow-sm shadow-gray-200">
-              <img src="/logo-white.svg" alt="WWC Logo" className="w-4.5 h-4.5 object-contain" />
+        {/* Мобильный хедер */}
+        <div className="lg:hidden flex items-center justify-between px-4 h-14 border-b border-gray-200/60 bg-white/90 backdrop-blur-md sticky top-0 z-40 mobile-safe-top">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#426BB3] flex items-center justify-center shadow-sm">
+              <img src="/logo-white.svg" alt="WWC Logo" className="w-5 h-5 object-contain" />
             </div>
-            <span className="text-sm font-bold text-gray-900 tracking-wide">WEST WOOD</span>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-gray-900 tracking-wide leading-tight">WEST WOOD</span>
+              <span className="text-[9px] text-gray-400 tracking-widest uppercase leading-tight">CRM System</span>
+            </div>
+          </div>
+          {/* Mobile header right: sync + lang + avatar */}
+          <div className="flex items-center gap-2">
+            <Header isMobileCompact />
           </div>
         </div>
 
@@ -96,10 +102,13 @@ function CRMShell() {
           <Header />
         </div>
 
-        {/* Контент */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        {/* Контент — с отступом снизу для мобильной навигации */}
+        <main className="flex-1 overflow-y-auto p-3 lg:p-6 pb-20 lg:pb-6 mobile-scroll">
           {renderContent()}
         </main>
+
+        {/* Мобильная навигация снизу — как в iOS */}
+        <MobileBottomNav />
       </div>
     </div>
   );

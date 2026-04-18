@@ -57,10 +57,15 @@ const ru: TranslationMap = {
   no_results: 'Нет результатов',
 
   // --- Статусы ---
-  new_status: 'Новый',
-  in_production: 'В производстве',
-  assembly: 'Сборка',
-  shipped: 'Отгружен',
+  status_design: 'Проектирование',
+  status_purchasing: 'Закупка материалов',
+  status_production: 'В производстве',
+  status_assembly: 'Сборка',
+  status_delivery: 'Доставка',
+  status_shipped: 'Отгружен',
+  status_claims: 'Рекламации',
+  status_completed: 'Выполнен',
+  status_paid: 'Оплачен',
 
   // --- Карточка заказа ---
   planned_margin: 'Плановая маржа',
@@ -206,11 +211,16 @@ const ukr: TranslationMap = {
   sort_desc: 'Сортування Я→А',
   no_results: 'Немає результатів',
 
-  // --- Статуси ---
-  new_status: 'Новий',
-  in_production: 'У виробництві',
-  assembly: 'Збірка',
-  shipped: 'Відправлено',
+  // --- Статусы ---
+  status_design: 'Проєктування',
+  status_purchasing: 'Закупівля матеріалів',
+  status_production: 'У виробництві',
+  status_assembly: 'Збірка',
+  status_delivery: 'Доставка',
+  status_shipped: 'Відвантажено',
+  status_claims: 'Рекламації',
+  status_completed: 'Виконано',
+  status_paid: 'Оплачено',
 
   // --- Картка замовлення ---
   planned_margin: 'Планова маржа',
