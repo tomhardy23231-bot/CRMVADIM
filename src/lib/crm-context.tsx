@@ -50,7 +50,10 @@ interface CRMState {
   updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
   updateOrderAmount: (orderId: string, amount: number) => Promise<void>;
   updateOrderPaymentDate: (orderId: string, date: string | null) => Promise<void>;
+<<<<<<< HEAD
   updateBudgetItemDate: (orderId: string, itemId: string, newDate: string, currentPlan: number) => Promise<void>;
+=======
+>>>>>>> 7387249ad30acf034bea6f015f83ab85f46912d1
   updateOrderDates: (orderId: string, updates: Partial<Pick<Order, 'productionStart' | 'assemblyStart' | 'shippingStart' | 'deadline'>>) => Promise<void>;
   toggleStageFlag: (orderId: string, flag: 'isProductionStarted' | 'isAssemblyStarted' | 'isShipped') => Promise<void>;
   updateBudgetItemPlan: (orderId: string, itemId: string, newPlan: number) => Promise<void>;
@@ -604,7 +607,11 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
     sidebarCollapsed, toggleSidebar,
     currentUser, isAdmin, hasPermission,
     orders, isLoading, selectedOrderId, setSelectedOrderId,
+<<<<<<< HEAD
     fetchOrders, addOrder, updateOrderStatus, updateOrderAmount, updateOrderPaymentDate, updateBudgetItemDate, updateOrderDates, toggleStageFlag,
+=======
+    fetchOrders, addOrder, updateOrderStatus, updateOrderAmount, updateOrderPaymentDate, updateOrderDates, toggleStageFlag,
+>>>>>>> 7387249ad30acf034bea6f015f83ab85f46912d1
     updateBudgetItemPlan, updateTranche, addTranche, removeTranche, toggleTranches,
     addBudgetItem, removeBudgetItem, removeOrder, updatePaymentArticle,
   };

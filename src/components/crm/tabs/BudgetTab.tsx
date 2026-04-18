@@ -503,6 +503,7 @@ export function BudgetTab({ order }: BudgetTabProps) {
                             </TableCell>
                           </TableRow>
 
+<<<<<<< HEAD
                           {/* Раскрытые транши */}
                           {item.hasTranches && hasTranches && (
                             <>
@@ -511,6 +512,39 @@ export function BudgetTab({ order }: BudgetTabProps) {
                                   <div className="mx-4 border-t border-dashed border-gray-300" />
                                 </TableCell>
                               </TableRow>
+=======
+                          {item.tranches!.map((tranche) => (
+                            <TableRow key={tranche.id} className={cn(
+                              'transition-colors',
+                              isOverBudget
+                                ? 'bg-red-50/40 hover:bg-red-50/60'
+                                : 'bg-emerald-50/30 hover:bg-emerald-50/50'
+                            )}>
+                              {/* Транш: название + неделя */}
+                              <TableCell className="pl-12">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-500">{tr('tranche')}</span>
+                                  <input
+                                    type="date"
+                                    value={tranche.plannedDate || ''}
+                                    onChange={(e) => {
+                                      const newDate = e.target.value;
+                                      const weekVal = dateToWeekValue(newDate);
+                                      updateTranche(order.id, item.id, tranche.id, {
+                                        plannedDate: newDate,
+                                        month: weekVal || tranche.month,
+                                      });
+                                    }}
+                                    className="h-7 w-[140px] text-xs border border-gray-200 rounded px-2 bg-white hover:border-gray-300 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/50 outline-none transition-colors"
+                                  />
+                                  {tranche.plannedDate && (
+                                    <span className="text-[10px] text-gray-400 font-medium">
+                                      {formatDateShort(tranche.plannedDate)}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+>>>>>>> 7387249ad30acf034bea6f015f83ab85f46912d1
 
                               {item.tranches!.map((tranche) => (
                                 <TableRow key={tranche.id} className={cn(

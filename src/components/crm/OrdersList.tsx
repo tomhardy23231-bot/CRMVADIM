@@ -3,7 +3,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
 import { formatUAH, calcMargin, calcSmartHybridCost } from '@/lib/crm-utils';
+<<<<<<< HEAD
 import { Download, Loader2, Search, Eye, PackageOpen, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Trash2, Filter, ChevronRight } from 'lucide-react';
+=======
+import { Download, Loader2, Search, Eye, PackageOpen, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Trash2, Filter } from 'lucide-react';
+>>>>>>> 7387249ad30acf034bea6f015f83ab85f46912d1
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +57,7 @@ const statusColors: Record<string, string> = {
   'Оплачен': 'bg-green-100 text-green-700',
 };
 
+<<<<<<< HEAD
 const statusDotColors: Record<string, string> = {
   'Проектирование': 'bg-slate-500',
   'Закупка материалов': 'bg-cyan-500',
@@ -65,6 +70,8 @@ const statusDotColors: Record<string, string> = {
   'Оплачен': 'bg-green-500',
 };
 
+=======
+>>>>>>> 7387249ad30acf034bea6f015f83ab85f46912d1
 const statusFilterOptions = ['Все', 'Проектирование', 'Закупка материалов', 'В производстве', 'Сборка', 'Доставка', 'Отгружен', 'Рекламации', 'Выполнен', 'Оплачен'] as const;
 
 type SortKey = 'amount' | 'deadline';

@@ -4,7 +4,11 @@ import React from 'react';
 import { useCRM } from '@/lib/crm-context';
 import type { Order, OrderStatus } from '@/lib/crm-types';
 import { formatUAH, calcMargin, calcSmartHybridCost, formatDateShort } from '@/lib/crm-utils';
+<<<<<<< HEAD
 import { ArrowLeft, Check, PackageX, Receipt, Pencil, CalendarDays, X, ChevronDown } from 'lucide-react';
+=======
+import { ArrowLeft, Check, PackageX, Receipt, Pencil, CalendarDays, X } from 'lucide-react';
+>>>>>>> 7387249ad30acf034bea6f015f83ab85f46912d1
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -131,6 +135,11 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
     return sum + paymentsSum;
   }, 0);
   
+<<<<<<< HEAD
+=======
+  // "Умная" (Гибридная) себестоимость по логике:
+  // Если есть привязанный факт (выплаты > 0), берем его. Если платежей нет — берем план.
+>>>>>>> 7387249ad30acf034bea6f015f83ab85f46912d1
   const totalCost = calcSmartHybridCost(order);
   const totalFactCost = totalFactExpense;
   
@@ -336,7 +345,95 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
                 >
                   {plannedMargin}%
                 </p>
+<<<<<<< HEAD
               </div>
+=======
+              )}
+              {/* Кнопка даты оплаты */}
+              {!isEditingAmount && (
+                <div className="mt-1.5">
+                  {isEditingPaymentDate ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="date"
+                        className="bg-white border border-indigo-400 rounded px-2 py-0.5 text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-indigo-400/50 w-[130px]"
+                        value={paymentDateValue}
+                        onChange={(e) => setPaymentDateValue(e.target.value)}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          updateOrderPaymentDate(order.id, paymentDateValue || null);
+                          setIsEditingPaymentDate(false);
+                        }}
+                        className="p-0.5 px-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 shadow-sm shrink-0"
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                      {order.expectedPaymentDate && (
+                        <button
+                          onClick={() => {
+                            updateOrderPaymentDate(order.id, null);
+                            setPaymentDateValue('');
+                            setIsEditingPaymentDate(false);
+                          }}
+                          className="p-0.5 px-1 bg-red-100 text-red-600 rounded hover:bg-red-200 shadow-sm shrink-0"
+                          title="Убрать дату"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingPaymentDate(true)}
+                      className={cn(
+                        'flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded transition-all duration-150 hover:-translate-y-0.5',
+                        order.expectedPaymentDate
+                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                          : 'bg-gray-50 text-gray-400 border border-dashed border-gray-300 hover:bg-gray-100 hover:text-gray-600'
+                      )}
+                    >
+                      <CalendarDays className="w-3 h-3" />
+                      {order.expectedPaymentDate
+                        ? `Оплата: ${formatDateShort(order.expectedPaymentDate)}`
+                        : 'Указать дату оплаты'
+                      }
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="p-1 px-2">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('planned_margin')}</p>
+              <p
+                className={cn(
+                  'text-base font-bold',
+                  plannedMargin >= 20 ? 'text-emerald-600' : plannedMargin >= 10 ? 'text-amber-600' : 'text-red-600'
+                )}
+              >
+                {plannedMargin}%
+              </p>
+            </div>
+            <div className="p-1 px-2">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('actual_margin')}</p>
+              <p
+                className={cn(
+                  'text-base font-bold',
+                  actualMargin >= 20 ? 'text-emerald-600' : actualMargin >= 10 ? 'text-amber-600' : 'text-red-600'
+                )}
+              >
+                {totalFactCost > 0 ? `${actualMargin}%` : '—'}
+              </p>
+            </div>
+            <div className="p-1 px-2">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('cost')}</p>
+              <p className="text-base font-bold text-gray-900">{formatUAH(totalCost)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+>>>>>>> 7387249ad30acf034bea6f015f83ab85f46912d1
 
               {/* Фактическая маржа */}
               <div className="p-2">
