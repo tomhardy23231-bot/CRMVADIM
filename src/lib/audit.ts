@@ -24,7 +24,7 @@ export async function logAction({ userId, action, entity, entityId, details }: L
         action,
         entity: entity || null,
         entityId: entityId || null,
-        details: details || null,
+        details: details || undefined,
       },
     });
   } catch (error) {

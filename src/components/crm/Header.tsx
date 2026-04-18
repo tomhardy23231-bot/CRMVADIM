@@ -7,6 +7,7 @@ import {
   RefreshCw,
   User,
   Search,
+  X,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -17,13 +18,19 @@ import { toast } from 'sonner';
 
 // ============================================================
 // Header — Верхняя панель с глобальным поиском, хлебными крошками, синхронизацией, аватаром
+// Поддерживает isMobileCompact для использования в мобильном хедере
 // ============================================================
 
-export function Header() {
+interface HeaderProps {
+  isMobileCompact?: boolean;
+}
+
+export function Header({ isMobileCompact = false }: HeaderProps) {
   const { breadcrumbs, lang, toggleLang, tr, orders, setSelectedOrderId, setCurrentPage, selectedOrderId, currentUser } = useCRM();
   const [syncing, setSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
 
   // Фильтрация заказов по поиску
@@ -52,6 +59,7 @@ export function Header() {
     setSelectedOrderId(orderId);
     setSearchQuery('');
     setSearchOpen(false);
+    setMobileSearchOpen(false);
   };
 
   const handleSync = () => {
@@ -70,6 +78,107 @@ export function Header() {
     'Отгружен': 'bg-emerald-100 text-emerald-700',
   };
 
+  // ======= Мобильная компактная версия =======
+  if (isMobileCompact) {
+    return (
+      <>
+        {/* Поиск (мобильный) */}
+        <button
+          onClick={() => setMobileSearchOpen(true)}
+          className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors active:bg-gray-200"
+        >
+          <Search className="w-4.5 h-4.5" />
+        </button>
+
+        {/* Переключатель языка (компактный) */}
+        <button
+          onClick={toggleLang}
+          className="h-7 px-2 text-[10px] font-bold rounded-md bg-gray-100 text-gray-600 active:bg-gray-200 transition-colors"
+        >
+          {lang === 'ru' ? 'RU' : 'UKR'}
+        </button>
+
+        {/* Синхронизация */}
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 transition-colors disabled:opacity-50 active:bg-gray-200"
+        >
+          <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin text-emerald-600')} />
+        </button>
+
+        {/* Мобильный поиск — полноэкранная модалка */}
+        {mobileSearchOpen && (
+          <div className="fixed inset-0 z-[60] bg-white animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-3 px-4 h-14 border-b border-gray-100 mobile-safe-top">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder={tr('global_search')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  autoFocus
+                  className="w-full h-10 pl-9 pr-4 text-base bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#426BB3] focus:ring-2 focus:ring-[#426BB3]/20 transition-all"
+                />
+              </div>
+              <button
+                onClick={() => { setMobileSearchOpen(false); setSearchQuery(''); }}
+                className="h-10 px-3 text-sm font-medium text-gray-500 hover:text-gray-700 active:text-gray-900 transition-colors shrink-0"
+              >
+                Отмена
+              </button>
+            </div>
+            <div className="overflow-y-auto mobile-scroll" style={{ maxHeight: 'calc(100vh - 56px)' }}>
+              {searchQuery.trim() && searchResults.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                  <Search className="w-8 h-8 text-gray-200 mb-3" />
+                  <p className="text-sm font-medium">{tr('no_results')}</p>
+                </div>
+              ) : (
+                <div className="py-2">
+                  {searchResults.map((order) => (
+                    <button
+                      key={order.id}
+                      onClick={() => handleSelectResult(order.id)}
+                      className="w-full text-left px-4 py-3.5 active:bg-gray-50 transition-colors flex items-center gap-3 border-b border-gray-50"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+                        <Search className="w-4 h-4 text-gray-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-gray-700">
+                            {order.id}
+                          </span>
+                          <Badge
+                            variant="secondary"
+                            className={cn('text-[10px] px-1.5 py-0', statusColors[order.status] || '')}
+                          >
+                            {order.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-500 truncate mt-0.5">
+                          {order.name}
+                        </p>
+                      </div>
+                      <span className="text-xs text-gray-400 shrink-0 font-medium">
+                        {order.orderAmount > 0
+                          ? `${(order.orderAmount / 1000).toFixed(0)}k ₴`
+                          : '—'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // ======= Десктопная версия =======
   return (
     <header className="h-12 border-b border-gray-200/80 bg-white/80 backdrop-blur-md px-4 lg:px-6 flex items-center justify-between shrink-0 sticky top-0 z-50">
       {/* Левая часть: Хлебные крошки */}
