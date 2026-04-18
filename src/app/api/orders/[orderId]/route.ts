@@ -46,6 +46,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ orde
         isShipped: body.isShipped,
         orderAmount: body.orderAmount,
         isAmountManual: body.isAmountManual,
+        expectedPaymentDate: body.expectedPaymentDate,
       },
     });
 

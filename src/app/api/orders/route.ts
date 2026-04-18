@@ -75,7 +75,7 @@ export async function POST(request: Request) {
       data: {
         externalId: body.id,
         name: body.name,
-        status: body.status || 'Новый',
+        status: body.status || 'Проектирование',
         orderAmount: body.orderAmount || 0,
         plannedCost: body.plannedCost || 0,
         deadline: body.deadline,

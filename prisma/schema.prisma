@@ -15,17 +15,18 @@ datasource db {
 }
 
 model Order {
-  id                  String   @id @default(cuid()) // internal ID
-  externalId          String?  // Can store 1C Contract/Tender ID
-  name                String
-  status              String   @default("Новый") // 'Новый' | 'В производстве' | 'Сборка' | 'Отгружен'
-  orderAmount         Float    @default(0)
-  isAmountManual      Boolean  @default(false)
-  plannedCost         Float    @default(0)
-  deadline            String   // ISO limit
-  productionStart     String
-  assemblyStart       String
-  shippingStart       String
+  id                    String   @id @default(cuid()) // internal ID
+  externalId            String?  // Can store 1C Contract/Tender ID
+  name                  String
+  status                String   @default("Новый") // 'Новый' | 'В производстве' | 'Сборка' | 'Отгружен'
+  orderAmount           Float    @default(0)
+  isAmountManual        Boolean  @default(false)
+  plannedCost           Float    @default(0)
+  deadline              String   // ISO limit
+  productionStart       String
+  assemblyStart         String
+  shippingStart         String
+  expectedPaymentDate   String?  // Ожидаемая дата оплаты клиентом (ISO)
   
   isProductionStarted Boolean  @default(false)
   isAssemblyStarted   Boolean  @default(false)
@@ -63,7 +64,8 @@ model Tranche {
   budgetItem   BudgetItem @relation(fields: [budgetItemId], references: [id], onDelete: Cascade)
   
   amount       Float      @default(0)
-  month        String     // 'YYYY-MM'
+  month        String     // 'YYYY-Wxx::DD.MM-DD.MM' (legacy week format)
+  plannedDate  String?    // ISO date 'YYYY-MM-DD' (new precise date)
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt

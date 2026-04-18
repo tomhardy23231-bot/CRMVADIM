@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH, formatWeekStr, generateWeekOptions, calcMargin } from '@/lib/crm-utils';
+import { formatUAH, formatWeekStr, generateWeekOptions, calcMargin, calcSmartHybridCost } from '@/lib/crm-utils';
 import {
   AlertTriangle,
   TrendingUp,
@@ -50,10 +50,15 @@ import {
 
 /** Цветовой маппинг статусов */
 const statusColors: Record<string, string> = {
-  'Новый': 'bg-blue-100 text-blue-700',
+  'Проектирование': 'bg-slate-100 text-slate-700',
+  'Закупка материалов': 'bg-cyan-100 text-cyan-700',
   'В производстве': 'bg-amber-100 text-amber-700',
   'Сборка': 'bg-purple-100 text-purple-700',
-  'Отгружен': 'bg-emerald-100 text-emerald-700',
+  'Доставка': 'bg-indigo-100 text-indigo-700',
+  'Отгружен': 'bg-blue-100 text-blue-700',
+  'Рекламации': 'bg-red-100 text-red-700',
+  'Выполнен': 'bg-emerald-100 text-emerald-700',
+  'Оплачен': 'bg-green-100 text-green-700',
 };
 
 /** Цвета для PieChart */
@@ -64,15 +69,15 @@ export function Dashboard() {
 
   // --- Динамические метрики ---
   const metrics = useMemo(() => {
-    const activeOrders = orders.filter((o) => o.status !== 'Отгружен');
-    const activeOrdersForCashGap = orders.filter((o) => o.status !== 'Отгружен');
+    const activeOrders = orders.filter((o) => !['Выполнен', 'Оплачен'].includes(o.status));
+    const activeOrdersForCashGap = orders.filter((o) => !['Выполнен', 'Оплачен'].includes(o.status));
     const activeCount = activeOrders.length;
 
-    // Ожидаемая прибыль: orderAmount - все плановые расходы
+    // Ожидаемая прибыль: orderAmount - гибридная себестоимость
     let expectedProfit = 0;
     for (const o of activeOrders) {
-      const budgetExpenseSum = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
-      expectedProfit += o.orderAmount - budgetExpenseSum;
+      const hybridCost = calcSmartHybridCost(o);
+      expectedProfit += o.orderAmount - hybridCost;
     }
 
     // Выплаты в текущем месяце
@@ -98,7 +103,7 @@ export function Dashboard() {
 
   // --- Кассовый разрыв (прогноз на 12 недель) ---
   const cashGapAlert = (() => {
-    const activeOrdersForCashGap = orders.filter((o) => o.status !== 'Отгружен');
+    const activeOrdersForCashGap = orders.filter((o) => !['Выполнен', 'Оплачен'].includes(o.status));
     const displayWeeks = generateWeekOptions(lang).map(o => o.value);
 
     const weekData: Record<string, { income: number; expense: number }> = {};
@@ -158,7 +163,7 @@ export function Dashboard() {
       // Горящие дедлайны (в пределах 7 дней)
       const dl = new Date(o.deadline);
       const deadlineDiff = Math.floor((dl.getTime() - now.getTime()) / 86400000);
-      if (deadlineDiff >= 0 && deadlineDiff <= 7 && o.status !== 'Отгружен') {
+      if (deadlineDiff >= 0 && deadlineDiff <= 7 && !['Выполнен', 'Оплачен'].includes(o.status)) {
         items.push({
           id: `deadline-${o.id}`,
           icon: Flame,
@@ -222,7 +227,7 @@ export function Dashboard() {
 
   const hotShipments = orders.filter((o) => {
     const dl = new Date(o.deadline);
-    return dl <= twoWeeksLater && o.status !== 'Отгружен';
+    return dl <= twoWeeksLater && !['Выполнен', 'Оплачен'].includes(o.status);
   });
 
   // Данные для PieChart — распределение по статусам
@@ -433,8 +438,8 @@ export function Dashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={orders.map(o => {
-                    const expenseBudget = o.budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
-                    const margin = calcMargin(o.orderAmount, expenseBudget);
+                    const smartHybridCost = calcSmartHybridCost(o);
+                    const margin = calcMargin(o.orderAmount, smartHybridCost);
                     return {
                       name: o.name.length > 18 ? o.name.slice(0, 18) + '…' : o.name,
                       margin,
@@ -471,8 +476,8 @@ export function Dashboard() {
                     maxBarSize={48}
                   >
                     {orders.map((_, index) => {
-                      const expenseBudget = orders[index].budgetItems.filter(b => !b.isIncome).reduce((s, b) => s + b.plan, 0);
-                      const margin = calcMargin(orders[index].orderAmount, expenseBudget);
+                      const smartHybridCost = calcSmartHybridCost(orders[index]);
+                      const margin = calcMargin(orders[index].orderAmount, smartHybridCost);
                       const color = margin >= 20 ? '#10b981' : margin >= 10 ? '#f59e0b' : '#ef4444';
                       return <Cell key={`cell-${index}`} fill={color} />;
                     })}

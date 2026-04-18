@@ -74,7 +74,7 @@ function CRMShell() {
   };
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className="min-h-screen flex bg-slate-200">
       {/* Десктопный сайдбар */}
       <Sidebar />
 

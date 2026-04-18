@@ -10,7 +10,7 @@ import type {
   UserPermissions,
 } from './crm-types';
 import type { Lang } from './translations';
-import { generateId, generateWeekOptions } from './crm-utils';
+import { generateId, generateWeekOptions, dateToWeekValue } from './crm-utils';
 import { t } from './translations';
 import { toast } from 'sonner';
 
@@ -49,6 +49,7 @@ interface CRMState {
   addOrder: (data: any) => Promise<void>;
   updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
   updateOrderAmount: (orderId: string, amount: number) => Promise<void>;
+  updateOrderPaymentDate: (orderId: string, date: string | null) => Promise<void>;
   updateOrderDates: (orderId: string, updates: Partial<Pick<Order, 'productionStart' | 'assemblyStart' | 'shippingStart' | 'deadline'>>) => Promise<void>;
   toggleStageFlag: (orderId: string, flag: 'isProductionStarted' | 'isAssemblyStarted' | 'isShipped') => Promise<void>;
   updateBudgetItemPlan: (orderId: string, itemId: string, newPlan: number) => Promise<void>;
@@ -127,8 +128,19 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
   const addOrder = useCallback(async (data: any) => {
     const orderTotal = data.orders?.reduce((sum: number, o: any) => sum + (o.total || 0), 0) || 0;
     const salesTotal = data.sales?.reduce((sum: number, s: any) => sum + (s.amount || 0), 0) || 0;
-    const orderAmount = Math.max(orderTotal, salesTotal);
-    const actualCost = data.sales?.reduce((sum: number, s: any) => sum + (s.cost !== undefined ? s.cost : 0), 0) || 0;
+    
+    // Новая логика: Если 1С передает жесткую сумму взаиморасчетов (totalContractAmount), используем её.
+    // Иначе считаем как раньше (по сумме реализаций/заказов).
+    const orderAmount = data.totalContractAmount !== undefined 
+      ? data.totalContractAmount 
+      : Math.max(orderTotal, salesTotal);
+      
+    // Новая логика: Если 1С передает жесткую чистую себестоимость материалов (totalMaterialCost), используем её.
+    // Иначе высчитываем из суммы себестоимостей отдельных строк.
+    const actualCost = data.totalMaterialCost !== undefined
+      ? data.totalMaterialCost
+      : data.sales?.reduce((sum: number, s: any) => sum + (s.cost !== undefined ? s.cost : 0), 0) || 0;
+      
     const plannedCost = actualCost;
 
     const specItems = (data.sales || []).map((s: any) => ({
@@ -188,7 +200,7 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
     const newOrder = {
       id: data.contractor?.id || generateId(),
       name: data.contractor?.name || 'Новый Тендер',
-      status: 'Новый',
+      status: 'Проектирование',
       orderAmount,
       plannedCost,
       deadline: new Date().toISOString().slice(0, 10),
@@ -289,6 +301,50 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
     });
   }, [fetchOrders]);
 
+  const updateOrderPaymentDate = useCallback(async (orderId: string, date: string | null) => {
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, expectedPaymentDate: date || undefined } : o)));
+    
+    // Также обновляем транш статьи "Оплата от клиента"
+    setOrders((prev) => {
+      const order = prev.find(o => o.id === orderId);
+      if (order && date) {
+        const incomeItem = order.budgetItems?.find(b => b.isIncome && b.name.includes("Оплата"));
+        if (incomeItem && incomeItem.tranches && incomeItem.tranches.length > 0) {
+          // Обновляем первый транш с plannedDate
+          const tranche = incomeItem.tranches[0];
+          const weekVal = dateToWeekValue(date);
+          // API call для транша
+          fetch(`/api/orders/${orderId}/budget/${incomeItem.id}/tranches`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: tranche.id, month: weekVal, plannedDate: date })
+          }).catch(() => {});
+          
+          return prev.map(o => o.id !== orderId ? o : {
+            ...o,
+            budgetItems: o.budgetItems.map(b => b.id === incomeItem.id ? {
+              ...b,
+              tranches: b.tranches?.map((t, i) => i === 0 ? { ...t, month: weekVal, plannedDate: date } : t)
+            } : b)
+          });
+        }
+      }
+      return prev;
+    });
+    
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedPaymentDate: date })
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      toast.error('Ошибка обновления даты оплаты');
+      await fetchOrders();
+    }
+  }, [fetchOrders]);
+
   const updateOrderDates = useCallback(
     async (orderId: string, updates: Partial<Pick<Order, 'productionStart' | 'assemblyStart' | 'shippingStart' | 'deadline'>>) => {
       setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...updates } : o)));
@@ -374,8 +430,9 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
 
   const addTranche = useCallback(async (orderId: string, itemId: string) => {
     const tempId = generateId();
-    const defaultWeek = generateWeekOptions('ru')[0].value;
-    const newTranche = { id: tempId, amount: 0, month: defaultWeek };
+    const today = new Date().toISOString().slice(0, 10);
+    const weekVal = dateToWeekValue(today);
+    const newTranche = { id: tempId, amount: 0, month: weekVal, plannedDate: today };
     
     setOrders((prev) => prev.map((o) => {
       if (o.id !== orderId) return o;
@@ -386,7 +443,7 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
       const res = await fetch(`/api/orders/${orderId}/budget/${itemId}/tranches`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: 0, month: newTranche.month })
+        body: JSON.stringify({ amount: 0, month: weekVal, plannedDate: today })
       });
       if (!res.ok) throw new Error();
     } catch {
@@ -491,7 +548,7 @@ export function CRMProvider({ children, user = null }: CRMProviderProps) {
     sidebarCollapsed, toggleSidebar,
     currentUser, isAdmin, hasPermission,
     orders, isLoading, selectedOrderId, setSelectedOrderId,
-    fetchOrders, addOrder, updateOrderStatus, updateOrderAmount, updateOrderDates, toggleStageFlag,
+    fetchOrders, addOrder, updateOrderStatus, updateOrderAmount, updateOrderPaymentDate, updateOrderDates, toggleStageFlag,
     updateBudgetItemPlan, updateTranche, addTranche, removeTranche, toggleTranches,
     addBudgetItem, removeBudgetItem, removeOrder, updatePaymentArticle,
   };

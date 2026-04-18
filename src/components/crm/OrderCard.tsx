@@ -3,8 +3,8 @@
 import React from 'react';
 import { useCRM } from '@/lib/crm-context';
 import type { Order, OrderStatus } from '@/lib/crm-types';
-import { formatUAH, calcMargin } from '@/lib/crm-utils';
-import { ArrowLeft, Check, PackageX, Receipt, Pencil } from 'lucide-react';
+import { formatUAH, calcMargin, calcSmartHybridCost, formatDateShort } from '@/lib/crm-utils';
+import { ArrowLeft, Check, PackageX, Receipt, Pencil, CalendarDays, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,27 +29,52 @@ import { Payments1CTab } from './tabs/Payments1CTab';
 // OrderCard — Карточка заказа с прогресс-баром, статусом, 4 вкладками
 // ============================================================
 
-const statusSteps: OrderStatus[] = ['Новый', 'В производстве', 'Сборка', 'Отгружен'];
+const statusSteps: OrderStatus[] = [
+  'Проектирование',
+  'Закупка материалов',
+  'В производстве',
+  'Сборка',
+  'Доставка',
+  'Отгружен',
+  'Рекламации',
+  'Выполнен',
+  'Оплачен'
+];
 
 const statusBadgeStyles: Record<string, string> = {
-  'Новый': 'bg-blue-100 text-blue-700 border-blue-200',
+  'Проектирование': 'bg-slate-100 text-slate-700 border-slate-200',
+  'Закупка материалов': 'bg-cyan-100 text-cyan-700 border-cyan-200',
   'В производстве': 'bg-amber-100 text-amber-700 border-amber-200',
   'Сборка': 'bg-purple-100 text-purple-700 border-purple-200',
-  'Отгружен': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  'Доставка': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  'Отгружен': 'bg-blue-100 text-blue-700 border-blue-200',
+  'Рекламации': 'bg-red-100 text-red-700 border-red-200',
+  'Выполнен': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  'Оплачен': 'bg-green-100 text-green-700 border-green-200',
 };
 
 const statusDotColors: Record<string, string> = {
-  'Новый': 'bg-blue-500',
+  'Проектирование': 'bg-slate-500',
+  'Закупка материалов': 'bg-cyan-500',
   'В производстве': 'bg-amber-500',
   'Сборка': 'bg-purple-500',
-  'Отгружен': 'bg-emerald-500',
+  'Доставка': 'bg-indigo-500',
+  'Отгружен': 'bg-blue-500',
+  'Рекламации': 'bg-red-500',
+  'Выполнен': 'bg-emerald-500',
+  'Оплачен': 'bg-green-500',
 };
 
 const statusTranslateMap: Record<string, string> = {
-  'Новый': 'new_status',
-  'В производстве': 'in_production',
-  'Сборка': 'assembly',
-  'Отгружен': 'shipped',
+  'Проектирование': 'status_design',
+  'Закупка материалов': 'status_purchasing',
+  'В производстве': 'status_production',
+  'Сборка': 'status_assembly',
+  'Доставка': 'status_delivery',
+  'Отгружен': 'status_shipped',
+  'Рекламации': 'status_claims',
+  'Выполнен': 'status_completed',
+  'Оплачен': 'status_paid',
 };
 
 interface OrderCardProps {
@@ -58,17 +83,22 @@ interface OrderCardProps {
 }
 
 export function OrderCard({ orderId, onBack }: OrderCardProps) {
-  const { orders, updateOrderStatus, updateOrderAmount, tr } = useCRM();
+  const { orders, updateOrderStatus, updateOrderAmount, updateOrderPaymentDate, tr } = useCRM();
   const order = orders.find((o) => o.id === orderId);
 
   const [isEditingAmount, setIsEditingAmount] = React.useState(false);
   const [amountValue, setAmountValue] = React.useState(order?.orderAmount || 0);
+  const [isEditingPaymentDate, setIsEditingPaymentDate] = React.useState(false);
+  const [paymentDateValue, setPaymentDateValue] = React.useState(order?.expectedPaymentDate || '');
 
   React.useEffect(() => {
     if (order && !isEditingAmount) {
       setAmountValue(order.orderAmount);
     }
-  }, [order, isEditingAmount]);
+    if (order && !isEditingPaymentDate) {
+      setPaymentDateValue(order.expectedPaymentDate || '');
+    }
+  }, [order, isEditingAmount, isEditingPaymentDate]);
 
   if (!order) {
     return (
@@ -106,12 +136,13 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
     return sum + paymentsSum;
   }, 0);
   
-  // Общая стоимость проекта = сумма всех плановых расходов
-  const totalCost = totalExpenseBudget;
+  // "Умная" (Гибридная) себестоимость по логике:
+  // Если есть привязанный факт (выплаты > 0), берем его. Если платежей нет — берем план.
+  const totalCost = calcSmartHybridCost(order);
   const totalFactCost = totalFactExpense;
   
-  const plannedMargin = calcMargin(order.orderAmount, totalCost);
-  const actualMargin = calcMargin(order.orderAmount, totalFactCost);
+  const plannedMargin = calcMargin(order.orderAmount, totalExpenseBudget);
+  const actualMargin = calcMargin(order.orderAmount, totalCost);
 
   // Обработчик смены статуса
   const handleStatusChange = (newStatus: OrderStatus) => {
@@ -229,6 +260,60 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
                 )}>
                   {formatUAH(order.orderAmount)}
                 </p>
+              )}
+              {/* Кнопка даты оплаты */}
+              {!isEditingAmount && (
+                <div className="mt-1.5">
+                  {isEditingPaymentDate ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="date"
+                        className="bg-white border border-indigo-400 rounded px-2 py-0.5 text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-indigo-400/50 w-[130px]"
+                        value={paymentDateValue}
+                        onChange={(e) => setPaymentDateValue(e.target.value)}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          updateOrderPaymentDate(order.id, paymentDateValue || null);
+                          setIsEditingPaymentDate(false);
+                        }}
+                        className="p-0.5 px-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 shadow-sm shrink-0"
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                      {order.expectedPaymentDate && (
+                        <button
+                          onClick={() => {
+                            updateOrderPaymentDate(order.id, null);
+                            setPaymentDateValue('');
+                            setIsEditingPaymentDate(false);
+                          }}
+                          className="p-0.5 px-1 bg-red-100 text-red-600 rounded hover:bg-red-200 shadow-sm shrink-0"
+                          title="Убрать дату"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingPaymentDate(true)}
+                      className={cn(
+                        'flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded transition-all duration-150 hover:-translate-y-0.5',
+                        order.expectedPaymentDate
+                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                          : 'bg-gray-50 text-gray-400 border border-dashed border-gray-300 hover:bg-gray-100 hover:text-gray-600'
+                      )}
+                    >
+                      <CalendarDays className="w-3 h-3" />
+                      {order.expectedPaymentDate
+                        ? `Оплата: ${formatDateShort(order.expectedPaymentDate)}`
+                        : 'Указать дату оплаты'
+                      }
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             <div className="p-1 px-2">

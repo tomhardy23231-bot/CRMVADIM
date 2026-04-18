@@ -3,7 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import type { Order } from '@/lib/crm-types';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH, calcDeviation, generateWeekOptions } from '@/lib/crm-utils';
+import { formatUAH, calcDeviation, dateToWeekValue, formatDateShort } from '@/lib/crm-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,8 +54,6 @@ export function BudgetTab({ order }: BudgetTabProps) {
     tr,
     lang,
   } = useCRM();
-
-  const weekOptions = generateWeekOptions(lang);
 
   // Модалка добавления статьи
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -347,23 +345,24 @@ export function BudgetTab({ order }: BudgetTabProps) {
                               <TableCell className="pl-12">
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs text-gray-500">{tr('tranche')}</span>
-                                  <Select
-                                    value={tranche.month}
-                                    onValueChange={(val) =>
+                                  <input
+                                    type="date"
+                                    value={tranche.plannedDate || ''}
+                                    onChange={(e) => {
+                                      const newDate = e.target.value;
+                                      const weekVal = dateToWeekValue(newDate);
                                       updateTranche(order.id, item.id, tranche.id, {
-                                        month: val,
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger className="h-7 w-[120px] text-xs">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {weekOptions.map((opt) => (
-                                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                        plannedDate: newDate,
+                                        month: weekVal || tranche.month,
+                                      });
+                                    }}
+                                    className="h-7 w-[140px] text-xs border border-gray-200 rounded px-2 bg-white hover:border-gray-300 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/50 outline-none transition-colors"
+                                  />
+                                  {tranche.plannedDate && (
+                                    <span className="text-[10px] text-gray-400 font-medium">
+                                      {formatDateShort(tranche.plannedDate)}
+                                    </span>
+                                  )}
                                 </div>
                               </TableCell>
 

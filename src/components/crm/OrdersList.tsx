@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH, calcMargin } from '@/lib/crm-utils';
+import { formatUAH, calcMargin, calcSmartHybridCost } from '@/lib/crm-utils';
 import { Download, Loader2, Search, Eye, PackageOpen, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Trash2, Filter } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -42,22 +42,32 @@ import { toast } from 'sonner';
 // ============================================================
 
 const statusColors: Record<string, string> = {
-  'Новый': 'bg-blue-100 text-blue-700',
+  'Проектирование': 'bg-slate-100 text-slate-700',
+  'Закупка материалов': 'bg-cyan-100 text-cyan-700',
   'В производстве': 'bg-amber-100 text-amber-700',
   'Сборка': 'bg-purple-100 text-purple-700',
-  'Отгружен': 'bg-emerald-100 text-emerald-700',
+  'Доставка': 'bg-indigo-100 text-indigo-700',
+  'Отгружен': 'bg-blue-100 text-blue-700',
+  'Рекламации': 'bg-red-100 text-red-700',
+  'Выполнен': 'bg-emerald-100 text-emerald-700',
+  'Оплачен': 'bg-green-100 text-green-700',
 };
 
-const statusFilterOptions = ['Все', 'Новый', 'В производстве', 'Сборка', 'Отгружен'] as const;
+const statusFilterOptions = ['Все', 'Проектирование', 'Закупка материалов', 'В производстве', 'Сборка', 'Доставка', 'Отгружен', 'Рекламации', 'Выполнен', 'Оплачен'] as const;
 
 type SortKey = 'amount' | 'deadline';
 type SortDirection = 'asc' | 'desc';
 
 const statusTranslateMap: Record<string, string> = {
-  'Новый': 'new_status',
-  'В производстве': 'in_production',
-  'Сборка': 'assembly',
-  'Отгружен': 'shipped',
+  'Проектирование': 'status_design',
+  'Закупка материалов': 'status_purchasing',
+  'В производстве': 'status_production',
+  'Сборка': 'status_assembly',
+  'Доставка': 'status_delivery',
+  'Отгружен': 'status_shipped',
+  'Рекламации': 'status_claims',
+  'Выполнен': 'status_completed',
+  'Оплачен': 'status_paid',
 };
 
 /** Тип данных тендера из 1С */
@@ -399,7 +409,17 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
                 </TableRow>
               ) : (
                 filtered.map((order) => {
-                  const margin = calcMargin(order.orderAmount, order.plannedCost);
+                  // Вычисляем гибридную себестоимость
+                  const smartHybridCost = order.budgetItems.filter(b => !b.isIncome).reduce((sum, b) => {
+                    if (b.name === 'Материалы (План)') {
+                      return sum + (b.fact > 0 ? b.fact : b.plan);
+                    }
+                    const linkedPayments = (order.payments || []).filter(p => p.budgetItemId === b.id);
+                    const paymentsSum = linkedPayments.reduce((acc, p) => acc + p.expense, 0);
+                    return sum + (paymentsSum > 0 ? paymentsSum : b.plan);
+                  }, 0);
+                  
+                  const margin = calcMargin(order.orderAmount, smartHybridCost);
                   return (
                     <TableRow
                       key={order.id}
