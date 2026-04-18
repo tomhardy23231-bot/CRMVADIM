@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH, formatWeekStr, generateWeekOptions } from '@/lib/crm-utils';
+import { formatUAH, formatWeekStr, generateYearWeeks, getCurrentWeekValue, dateToWeekValue } from '@/lib/crm-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,13 +36,13 @@ import {
   Receipt,
   Inbox,
   XIcon,
+  Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // ============================================================
-// PaymentCalendar — Динамический глобальный платёжный календарь
-// Показывает следующие 12 недель (понедельный Cash Flow).
-// Имеет «липкую» первую колонку (Premium UX).
+// PaymentCalendar — Глобальный платёжный календарь (Премиум)
+// Показывает все недели года с auto-scroll на текущую.
 // ============================================================
 
 interface DrilldownItem {
@@ -62,56 +62,66 @@ interface DrilldownState {
 
 export function PaymentCalendar() {
   const { orders, tr, lang } = useCRM();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const currentWeekRef = useRef<HTMLTableCellElement>(null);
 
   const [selectedOrderId, setSelectedOrderId] = useState('all');
   const [drilldown, setDrilldown] = useState<DrilldownState>({
     open: false, label: '', monthLabel: '', amount: 0, isIncome: true, items: [],
   });
 
-  // --- 12 недель (динамические из utils) ---
-  const displayMonths = useMemo(() => {
-    return generateWeekOptions(lang).map(opt => opt.value);
-  }, [lang]);
+  // --- Все недели года ---
+  const allWeeks = useMemo(() => generateYearWeeks(lang), [lang]);
+  const currentWeekValue = useMemo(() => getCurrentWeekValue(), []);
 
   // --- Агрегация строк по неделям ---
   const rows = useMemo(() => {
-      const map = new Map<string, { id: string, label: string, isIncome: boolean, byMonth: Record<string, number>, breakdown: Record<string, DrilldownItem[]> }>();
-      let idCounter = 0;
+    const map = new Map<string, { id: string, label: string, isIncome: boolean, byMonth: Record<string, number>, breakdown: Record<string, DrilldownItem[]> }>();
+    let idCounter = 0;
 
-      for (const order of orders) {
-          if (selectedOrderId !== 'all' && order.id !== selectedOrderId) continue;
-          
-          for (const item of order.budgetItems) {
-              if (!item.tranches) continue;
-              for (const tr of item.tranches) {
-                 if (tr.amount <= 0) continue;
-                 
-                 const key = `${item.isIncome ? 'in' : 'out'}::${item.name}`;
-                 if (!map.has(key)) {
-                    map.set(key, { id: `row-${idCounter++}`, label: item.name, isIncome: !!item.isIncome, byMonth: {}, breakdown: {} });
-                 }
-                 const row = map.get(key)!;
-                 if (!row.byMonth[tr.month]) row.byMonth[tr.month] = 0;
-                 row.byMonth[tr.month] += tr.amount;
-                 
-                 if (!row.breakdown[tr.month]) row.breakdown[tr.month] = [];
-                 row.breakdown[tr.month].push({ orderId: order.externalId || order.id.slice(0, 8), orderName: order.name, amount: tr.amount });
-              }
+    for (const order of orders) {
+      if (selectedOrderId !== 'all' && order.id !== selectedOrderId) continue;
+
+      for (const item of order.budgetItems) {
+        if (!item.tranches) continue;
+        for (const trItem of item.tranches) {
+          if (trItem.amount <= 0) continue;
+
+          // Определяем week-value: если есть plannedDate — вычисляем из неё, иначе legacy month
+          let weekValue = trItem.month;
+          if (trItem.plannedDate) {
+            const computed = dateToWeekValue(trItem.plannedDate);
+            if (computed) weekValue = computed;
           }
-      }
-      
-      const sorted = Array.from(map.values()).sort((a, b) => {
-          if (a.isIncome !== b.isIncome) return a.isIncome ? -1 : 1;
-          return a.label.localeCompare(b.label);
-      });
 
-      return sorted;
+          const key = `${item.isIncome ? 'in' : 'out'}::${item.name}`;
+          if (!map.has(key)) {
+            map.set(key, { id: `row-${idCounter++}`, label: item.name, isIncome: !!item.isIncome, byMonth: {}, breakdown: {} });
+          }
+          const row = map.get(key)!;
+          if (!row.byMonth[weekValue]) row.byMonth[weekValue] = 0;
+          row.byMonth[weekValue] += trItem.amount;
+
+          if (!row.breakdown[weekValue]) row.breakdown[weekValue] = [];
+          row.breakdown[weekValue].push({ orderId: order.externalId || order.id.slice(0, 8), orderName: order.name, amount: trItem.amount });
+        }
+      }
+    }
+
+    const sorted = Array.from(map.values()).sort((a, b) => {
+      if (a.isIncome !== b.isIncome) return a.isIncome ? -1 : 1;
+      return a.label.localeCompare(b.label);
+    });
+
+    return sorted;
   }, [orders, selectedOrderId]);
 
   const incomeRows = rows.filter(r => r.isIncome);
   const expenseRows = rows.filter(r => !r.isIncome);
 
   // --- Итоги ---
+  const weekValues = useMemo(() => allWeeks.map(w => w.value), [allWeeks]);
+
   const totals = useMemo(() => {
     const totalIncome: Record<string, number> = {};
     const totalExpense: Record<string, number> = {};
@@ -119,34 +129,56 @@ export function PaymentCalendar() {
     const incomeBreakdown: Record<string, DrilldownItem[]> = {};
     const expenseBreakdown: Record<string, DrilldownItem[]> = {};
 
-    displayMonths.forEach(m => {
-        totalIncome[m] = 0;
-        totalExpense[m] = 0;
-        incomeBreakdown[m] = [];
-        expenseBreakdown[m] = [];
+    weekValues.forEach(m => {
+      totalIncome[m] = 0;
+      totalExpense[m] = 0;
+      incomeBreakdown[m] = [];
+      expenseBreakdown[m] = [];
     });
 
     incomeRows.forEach(r => {
-        displayMonths.forEach(m => {
-            if (r.byMonth[m]) totalIncome[m] += r.byMonth[m];
-            if (r.breakdown[m]) incomeBreakdown[m].push(...r.breakdown[m]);
-        });
+      weekValues.forEach(m => {
+        if (r.byMonth[m]) totalIncome[m] += r.byMonth[m];
+        if (r.breakdown[m]) incomeBreakdown[m].push(...r.breakdown[m]);
+      });
     });
     expenseRows.forEach(r => {
-        displayMonths.forEach(m => {
-            if (r.byMonth[m]) totalExpense[m] += r.byMonth[m];
-            if (r.breakdown[m]) expenseBreakdown[m].push(...r.breakdown[m]);
-        });
+      weekValues.forEach(m => {
+        if (r.byMonth[m]) totalExpense[m] += r.byMonth[m];
+        if (r.breakdown[m]) expenseBreakdown[m].push(...r.breakdown[m]);
+      });
     });
 
     let running = 0;
-    displayMonths.forEach(m => {
-        running += totalIncome[m] - totalExpense[m];
-        balance[m] = running;
+    weekValues.forEach(m => {
+      running += totalIncome[m] - totalExpense[m];
+      balance[m] = running;
     });
 
     return { totalIncome, totalExpense, balance, incomeBreakdown, expenseBreakdown };
-  }, [incomeRows, expenseRows, displayMonths]);
+  }, [incomeRows, expenseRows, weekValues]);
+
+  // --- Макс значение для sparkline ---
+  const maxBarValue = useMemo(() => {
+    let max = 1;
+    weekValues.forEach(m => {
+      max = Math.max(max, totals.totalIncome[m] || 0, totals.totalExpense[m] || 0);
+    });
+    return max;
+  }, [totals, weekValues]);
+
+  // --- Auto-scroll на текущую неделю ---
+  useEffect(() => {
+    if (currentWeekRef.current && scrollRef.current) {
+      const container = scrollRef.current;
+      const target = currentWeekRef.current;
+      const containerWidth = container.clientWidth;
+      const targetLeft = target.offsetLeft;
+      const targetWidth = target.offsetWidth;
+      // Центрируем текущую неделю
+      container.scrollLeft = targetLeft - containerWidth / 2 + targetWidth / 2;
+    }
+  }, [allWeeks]);
 
   const openDrilldown = useCallback(
     (label: string, monthLabel: string, isIncome: boolean, items: DrilldownItem[] | undefined) => {
@@ -162,26 +194,33 @@ export function PaymentCalendar() {
     setDrilldown((prev) => ({ ...prev, open: false }));
   }, []);
 
-  const hasData = displayMonths.some(
+  const hasData = weekValues.some(
     m => totals.totalIncome[m] > 0 || totals.totalExpense[m] > 0
   );
 
-  // Классы для первой «липкой» колонки
-  const stickyColClass = "sticky left-0 z-10 w-[240px] max-w-[240px] shadow-[2px_0_4px_rgba(0,0,0,0.02)]";
+  // Определяем текущий week index для подсвечивания
+  const currentWeekIndex = weekValues.indexOf(currentWeekValue);
+
+  // Классы для первой «липкой» колонки — адаптивные
+  const stickyColClass = "sticky left-0 z-10 w-[140px] min-w-[140px] max-w-[140px] lg:w-[220px] lg:min-w-[220px] lg:max-w-[220px]";
 
   return (
     <div className="space-y-4">
-      <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200 border-none ring-1 ring-gray-100">
-        <CardHeader className="pb-3 border-b border-gray-50/50">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold text-gray-800">
-              <CalendarRange className="w-5 h-5 text-emerald-600" />
-              Глобальный Платёжный Календарь
+      <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200 border-none ring-1 ring-gray-100 overflow-hidden">
+        <CardHeader className="pb-3 border-b border-gray-100/80 bg-gradient-to-r from-white to-gray-50/30 px-3 lg:px-6">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <CardTitle className="flex items-center gap-2 lg:gap-2.5 text-sm lg:text-base font-semibold text-gray-800">
+              <div className="w-7 h-7 lg:w-8 lg:h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-sm shrink-0">
+                <CalendarRange className="w-3.5 h-3.5 lg:w-4.5 lg:h-4.5 text-white" />
+              </div>
+              <span className="hidden sm:inline">Платёжный Календарь</span>
+              <span className="sm:hidden">Календарь</span>
+              <span className="text-[10px] lg:text-xs font-normal text-gray-400 ml-0.5">{new Date().getFullYear()}</span>
             </CardTitle>
 
             <div className="flex items-center gap-2 flex-wrap">
               <Select value={selectedOrderId} onValueChange={setSelectedOrderId}>
-                <SelectTrigger className="w-[240px] h-9 text-xs border-gray-200 bg-gray-50/50 hover:bg-gray-50 transition-colors">
+                <SelectTrigger className="w-full lg:w-[240px] h-9 text-xs border-gray-200 bg-gray-50/50 hover:bg-gray-50 transition-colors rounded-lg">
                   <Filter className="w-3.5 h-3.5 text-gray-400 mr-1" />
                   <SelectValue />
                 </SelectTrigger>
@@ -205,61 +244,148 @@ export function PaymentCalendar() {
         <CardContent className="p-0">
           {!hasData ? (
             <div className="flex flex-col items-center justify-center py-20 bg-gradient-to-b from-transparent to-gray-50/30">
-               <div className="w-16 h-16 rounded-2xl bg-white shadow-sm border border-gray-100 flex items-center justify-center mb-4 relative">
+              <div className="w-16 h-16 rounded-2xl bg-white shadow-sm border border-gray-100 flex items-center justify-center mb-4 relative">
                 <Inbox className="w-8 h-8 text-gray-300" />
                 <div className="absolute inset-0 bg-gradient-to-tr from-white/40 to-transparent rounded-2xl"></div>
               </div>
               <p className="text-sm font-medium text-gray-500">
-                Нет запланированных финансовых движений на ближайшие 12 недель.
+                Нет запланированных финансовых движений.
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                Добавьте расходы и назначьте даты в бюджете тендера
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full min-w-[1200px] border-collapse relative">
+            <div ref={scrollRef} className="overflow-x-auto custom-scrollbar scroll-smooth mobile-scroll">
+              <table className="w-full border-collapse relative" style={{ minWidth: `${140 + allWeeks.length * 100}px` }}>
+                
+                {/* === SPARKLINE BAR CHART === */}
                 <thead>
+                  <tr>
+                    <th className={cn("bg-white border-b border-gray-100 px-2 lg:px-3 py-2", stickyColClass)}>
+                      <div className="flex items-center gap-1 text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                        <Zap className="w-3 h-3" />
+                        <span className="hidden sm:inline">Cash Flow</span>
+                        <span className="sm:hidden">CF</span>
+                      </div>
+                    </th>
+                    {allWeeks.map((w, i) => {
+                      const inc = totals.totalIncome[w.value] || 0;
+                      const exp = totals.totalExpense[w.value] || 0;
+                      const incH = Math.round((inc / maxBarValue) * 32);
+                      const expH = Math.round((exp / maxBarValue) * 32);
+                      const isCurrent = w.value === currentWeekValue;
+                      const isPast = i < currentWeekIndex;
+
+                      return (
+                        <th
+                          key={`spark-${w.value}`}
+                          className={cn(
+                            "border-b border-gray-100 px-0.5 lg:px-1 py-2 min-w-[80px] lg:min-w-[120px] transition-colors",
+                            isCurrent ? 'bg-indigo-50/60' : isPast ? 'bg-gray-50/40' : 'bg-white'
+                          )}
+                        >
+                          <div className="flex items-end justify-center gap-[3px] h-[36px]">
+                            <div
+                              className="w-[14px] rounded-t-sm bg-gradient-to-t from-emerald-400 to-emerald-300 transition-all"
+                              style={{ height: `${Math.max(incH, inc > 0 ? 3 : 0)}px` }}
+                              title={`Доход: ${formatUAH(inc)}`}
+                            />
+                            <div
+                              className="w-[14px] rounded-t-sm bg-gradient-to-t from-red-400 to-red-300 transition-all"
+                              style={{ height: `${Math.max(expH, exp > 0 ? 3 : 0)}px` }}
+                              title={`Расход: ${formatUAH(exp)}`}
+                            />
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+
+                  {/* === WEEK HEADERS === */}
                   <tr className="border-b border-gray-200">
-                    <th className={cn("bg-white text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 z-20", stickyColClass)}>
+                    <th className={cn("bg-white text-left text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase tracking-widest px-2 lg:px-4 py-2.5 z-20 border-r border-gray-100", stickyColClass)}>
                       {tr('article')}
                     </th>
-                    {displayMonths.map((m) => (
-                      <th key={m} className="text-right px-4 py-3 min-w-[140px] bg-white">
-                        <div className="text-xs font-bold text-gray-700 uppercase whitespace-pre-wrap">{formatWeekStr(m, lang)}</div>
-                      </th>
-                    ))}
+                    {allWeeks.map((w, i) => {
+                      const isCurrent = w.value === currentWeekValue;
+                      const isPast = i < currentWeekIndex;
+                      // Parse week number and dates
+                      const parts = w.value.split('::');
+                      const weekNum = parts[0]?.split('-W')[1];
+                      const dates = parts[1] || '';
+
+                      return (
+                        <th
+                          key={w.value}
+                          ref={isCurrent ? currentWeekRef : undefined}
+                          className={cn(
+                            "text-center px-1 lg:px-2 py-2 lg:py-2.5 min-w-[80px] lg:min-w-[120px] transition-colors relative",
+                            isCurrent ? 'bg-indigo-50/80' : isPast ? 'bg-gray-50/50' : 'bg-white'
+                          )}
+                        >
+                          {isCurrent && (
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-0.5">
+                              <span className="text-[8px] font-black text-white bg-indigo-500 px-2 py-[1px] rounded-full uppercase tracking-widest shadow-sm">
+                                сейчас
+                              </span>
+                            </div>
+                          )}
+                          <div className={cn(
+                            "text-[10px] lg:text-xs font-bold tracking-tight",
+                            isCurrent ? 'text-indigo-700' : isPast ? 'text-gray-400' : 'text-gray-600'
+                          )}>
+                            <span className="hidden sm:inline">Нед</span> {parseInt(weekNum || '0')}
+                          </div>
+                          <div className={cn(
+                            "text-[10px] font-medium mt-0.5",
+                            isCurrent ? 'text-indigo-500' : isPast ? 'text-gray-300' : 'text-gray-400'
+                          )}>
+                            {dates}
+                          </div>
+                          {isCurrent && (
+                            <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-indigo-500 rounded-t" />
+                          )}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
 
                 <tbody>
                   {/* === Поступления === */}
-                  <tr className="bg-emerald-50/70 border-b border-emerald-100/50">
-                    <td className={cn("bg-emerald-50 text-xs font-bold text-emerald-800 uppercase tracking-wider px-4 py-3", stickyColClass)}>
+                  <tr className="bg-emerald-50/60">
+                    <td className={cn("bg-emerald-50 text-[10px] font-bold text-emerald-700 uppercase tracking-widest px-4 py-2 border-r border-emerald-100/50", stickyColClass)}>
                       <div className="flex items-center gap-1.5">
-                        <TrendingUp className="w-4 h-4" />
+                        <TrendingUp className="w-3.5 h-3.5" />
                         {tr('income')}
                       </div>
                     </td>
-                    <td className="bg-emerald-50/70" colSpan={displayMonths.length}></td>
+                    <td className="bg-emerald-50/40" colSpan={allWeeks.length}></td>
                   </tr>
-                  
+
                   {incomeRows.map((row) => (
-                    <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors duration-150">
-                      <td className={cn("bg-white px-4 py-3 text-sm font-medium text-gray-800 border-r border-gray-50", stickyColClass)}>
-                        <span className="truncate block max-w-[220px]">{row.label}</span>
+                    <tr key={row.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors duration-100">
+                      <td className={cn("bg-white px-2 lg:px-4 py-2 text-xs lg:text-sm font-medium text-gray-700 border-r border-gray-50", stickyColClass)}>
+                        <span className="truncate block max-w-[120px] lg:max-w-[200px]">{row.label}</span>
                       </td>
-                      {displayMonths.map((m) => {
-                        const val = row.byMonth[m] || 0;
+                      {allWeeks.map((w, i) => {
+                        const val = row.byMonth[w.value] || 0;
+                        const isCurrent = w.value === currentWeekValue;
+                        const isPast = i < currentWeekIndex;
                         return (
                           <td
-                            key={m}
-                            onClick={() => openDrilldown(row.label, formatWeekStr(m, lang).replace('\n',''), true, row.breakdown[m])}
+                            key={w.value}
+                            onClick={() => openDrilldown(row.label, w.label, true, row.breakdown[w.value])}
                             className={cn(
-                              'px-4 py-3 text-sm text-right font-semibold transition-all duration-150',
+                              'px-2 py-2 text-xs text-right font-semibold transition-all duration-100',
+                              isCurrent ? 'bg-indigo-50/30' : isPast ? 'bg-gray-50/20' : '',
                               val > 0
-                                ? 'text-emerald-700 cursor-pointer hover:bg-emerald-50 hover:underline decoration-emerald-200 decoration-dotted underline-offset-4 rounded-sm'
-                                : 'text-gray-300 font-medium'
+                                ? 'text-emerald-600 cursor-pointer hover:bg-emerald-50 hover:underline decoration-emerald-200 decoration-dotted underline-offset-4 rounded-sm'
+                                : 'text-gray-200 font-normal'
                             )}
                           >
-                            {val > 0 ? formatUAH(val) : '—'}
+                            {val > 0 ? formatUAH(val) : '–'}
                           </td>
                         );
                       })}
@@ -267,116 +393,145 @@ export function PaymentCalendar() {
                   ))}
 
                   {/* Итого поступления */}
-                  <tr className="bg-emerald-100/40 border-b border-emerald-200/60">
-                    <td className={cn("bg-emerald-50/80 px-4 py-3 text-sm font-bold text-emerald-900 border-r border-emerald-100/50", stickyColClass)}>
+                  <tr className="bg-emerald-100/30 border-b border-emerald-200/40">
+                    <td className={cn("bg-emerald-50/70 px-4 py-2 text-xs font-bold text-emerald-800 border-r border-emerald-100/50", stickyColClass)}>
                       {tr('total_income')}
                     </td>
-                    {displayMonths.map((m) => {
-                      const val = totals.totalIncome[m];
+                    {allWeeks.map((w, i) => {
+                      const val = totals.totalIncome[w.value];
+                      const isCurrent = w.value === currentWeekValue;
+                      const isPast = i < currentWeekIndex;
                       return (
                         <td
-                          key={m}
-                          onClick={() => openDrilldown(tr('total_income'), formatWeekStr(m, lang).replace('\n',''), true, totals.incomeBreakdown[m])}
+                          key={w.value}
+                          onClick={() => openDrilldown(tr('total_income'), w.label, true, totals.incomeBreakdown[w.value])}
                           className={cn(
-                            'px-4 py-3 text-sm text-right font-bold transition-all duration-150 bg-emerald-100/40',
+                            'px-2 py-2 text-xs text-right font-bold transition-all duration-100',
+                            isCurrent ? 'bg-indigo-50/40' : isPast ? 'bg-gray-50/20' : 'bg-emerald-50/20',
                             val > 0
-                              ? 'text-emerald-900 cursor-pointer hover:bg-emerald-200/50 hover:underline decoration-emerald-400 decoration-dotted underline-offset-4 rounded-sm'
-                              : 'text-emerald-700/40'
+                              ? 'text-emerald-800 cursor-pointer hover:bg-emerald-100/60 hover:underline decoration-emerald-300 decoration-dotted underline-offset-4 rounded-sm'
+                              : 'text-emerald-300/50'
                           )}
                         >
-                          {val > 0 ? formatUAH(val) : '—'}
+                          {val > 0 ? formatUAH(val) : '–'}
                         </td>
                       );
                     })}
                   </tr>
 
-                  {/* === Выплаты === */}
-                  <tr className="bg-red-50/70 border-b border-red-100/50">
-                    <td className={cn("bg-red-50 text-xs font-bold text-red-800 uppercase tracking-wider px-4 py-3", stickyColClass)}>
-                       <div className="flex items-center gap-1.5">
-                        <TrendingDown className="w-4 h-4" />
+                  {/* === Расходы === */}
+                  <tr className="bg-red-50/60">
+                    <td className={cn("bg-red-50 text-[10px] font-bold text-red-700 uppercase tracking-widest px-4 py-2 border-r border-red-100/50", stickyColClass)}>
+                      <div className="flex items-center gap-1.5">
+                        <TrendingDown className="w-3.5 h-3.5" />
                         {tr('expenses')}
                       </div>
                     </td>
-                    <td className="bg-red-50/70" colSpan={displayMonths.length}></td>
+                    <td className="bg-red-50/40" colSpan={allWeeks.length}></td>
                   </tr>
 
                   {expenseRows.map((row) => (
-                    <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors duration-150">
-                      <td className={cn("bg-white px-4 py-3 text-sm font-medium text-gray-800 border-r border-gray-50", stickyColClass)}>
-                         <span className="truncate block max-w-[220px]">{row.label}</span>
+                    <tr key={row.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors duration-100">
+                      <td className={cn("bg-white px-2 lg:px-4 py-2 text-xs lg:text-sm font-medium text-gray-700 border-r border-gray-50", stickyColClass)}>
+                        <span className="truncate block max-w-[120px] lg:max-w-[200px]">{row.label}</span>
                       </td>
-                      {displayMonths.map((m) => {
-                         const val = row.byMonth[m] || 0;
-                         return (
+                      {allWeeks.map((w, i) => {
+                        const val = row.byMonth[w.value] || 0;
+                        const isCurrent = w.value === currentWeekValue;
+                        const isPast = i < currentWeekIndex;
+                        return (
                           <td
-                            key={m}
-                            onClick={() => openDrilldown(row.label, formatWeekStr(m, lang).replace('\n',''), false, row.breakdown[m])}
+                            key={w.value}
+                            onClick={() => openDrilldown(row.label, w.label, false, row.breakdown[w.value])}
                             className={cn(
-                              'px-4 py-3 text-sm text-right font-medium transition-all duration-150',
+                              'px-2 py-2 text-xs text-right font-medium transition-all duration-100',
+                              isCurrent ? 'bg-indigo-50/30' : isPast ? 'bg-gray-50/20' : '',
                               val > 0
                                 ? 'text-red-600 cursor-pointer hover:bg-red-50 hover:underline decoration-red-200 decoration-dotted underline-offset-4 rounded-sm font-semibold'
-                                : 'text-gray-300'
+                                : 'text-gray-200 font-normal'
                             )}
                           >
-                            {val > 0 ? formatUAH(val) : '—'}
+                            {val > 0 ? formatUAH(val) : '–'}
                           </td>
-                         )
+                        );
                       })}
                     </tr>
                   ))}
 
-                  {/* Итого выплаты */}
-                  <tr className="bg-red-100/40 border-b border-red-200/60">
-                    <td className={cn("bg-red-50/60 px-4 py-3 text-sm font-bold text-red-900 border-r border-red-100/50", stickyColClass)}>
+                  {/* Итого расходы */}
+                  <tr className="bg-red-100/30 border-b border-red-200/40">
+                    <td className={cn("bg-red-50/60 px-4 py-2 text-xs font-bold text-red-800 border-r border-red-100/50", stickyColClass)}>
                       {tr('total_expenses')}
                     </td>
-                    {displayMonths.map((m) => {
-                       const val = totals.totalExpense[m];
-                       return (
+                    {allWeeks.map((w, i) => {
+                      const val = totals.totalExpense[w.value];
+                      const isCurrent = w.value === currentWeekValue;
+                      const isPast = i < currentWeekIndex;
+                      return (
                         <td
-                          key={m}
-                          onClick={() => openDrilldown(tr('total_expenses'), formatWeekStr(m, lang).replace('\n',''), false, totals.expenseBreakdown[m])}
+                          key={w.value}
+                          onClick={() => openDrilldown(tr('total_expenses'), w.label, false, totals.expenseBreakdown[w.value])}
                           className={cn(
-                            'px-4 py-3 text-sm text-right font-bold transition-all duration-150 bg-red-100/40',
+                            'px-2 py-2 text-xs text-right font-bold transition-all duration-100',
+                            isCurrent ? 'bg-indigo-50/40' : isPast ? 'bg-gray-50/20' : 'bg-red-50/20',
                             val > 0
-                              ? 'text-red-900 cursor-pointer hover:bg-red-200/50 hover:underline decoration-red-400 decoration-dotted underline-offset-4 rounded-sm'
-                              : 'text-red-700/40'
+                              ? 'text-red-800 cursor-pointer hover:bg-red-100/60 hover:underline decoration-red-300 decoration-dotted underline-offset-4 rounded-sm'
+                              : 'text-red-300/50'
                           )}
                         >
-                          {val > 0 ? formatUAH(val) : '—'}
+                          {val > 0 ? formatUAH(val) : '–'}
                         </td>
-                      )
+                      );
                     })}
                   </tr>
 
                   {/* === БАЛАНС === */}
-                  <tr className="border-t-[3px] border-gray-300 bg-gray-100/80">
-                    <td className={cn("bg-gray-100 px-4 py-4 border-r border-gray-200", stickyColClass)}>
-                      <div className="flex items-center gap-1.5 text-sm font-bold text-gray-800">
-                        <AlertTriangle className="w-4 h-4 text-gray-500" />
+                  <tr className="border-t-2 border-gray-200">
+                    <td className={cn("bg-gray-50 px-4 py-3 border-r border-gray-200", stickyColClass)}>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700">
+                        <AlertTriangle className="w-3.5 h-3.5 text-gray-400" />
                         {tr('balance')}
                       </div>
                     </td>
-                    {displayMonths.map((m) => {
-                      const isNegative = totals.balance[m] < 0;
+                    {allWeeks.map((w, i) => {
+                      const bal = totals.balance[w.value] || 0;
+                      const isNegative = bal < 0;
+                      const isCurrent = w.value === currentWeekValue;
+                      const isPast = i < currentWeekIndex;
+                      const hasActivity = (totals.totalIncome[w.value] || 0) > 0 || (totals.totalExpense[w.value] || 0) > 0;
+                      
                       return (
                         <td
-                          key={m}
+                          key={w.value}
                           className={cn(
-                            'px-4 py-4 text-sm text-right transition-colors border-l border-white/50',
-                            isNegative ? 'bg-red-100/80' : 'bg-emerald-50/80'
+                            'px-2 py-3 text-right transition-colors border-l border-gray-100/50',
+                            isCurrent ? 'bg-indigo-50/50' : isPast ? 'bg-gray-50/30' : '',
+                            isNegative && hasActivity ? 'bg-red-50/60' : !isNegative && hasActivity ? 'bg-emerald-50/40' : ''
                           )}
                         >
-                          <span className={cn('text-lg font-black tracking-tight', isNegative ? 'text-red-700' : 'text-emerald-700')}>
-                            {formatUAH(totals.balance[m])}
-                          </span>
-                          {isNegative && (
-                            <div className="flex items-center justify-end gap-1 mt-1">
-                              <span className="text-[10px] font-bold text-red-600 bg-red-200/50 px-1.5 py-0.5 rounded uppercase tracking-widest">
-                                {tr('cash_gap')}
+                          {hasActivity || bal !== 0 ? (
+                            <>
+                              <span className={cn(
+                                'text-sm font-black tracking-tight block',
+                                isNegative ? 'text-red-600' : 'text-emerald-600'
+                              )}>
+                                {formatUAH(bal)}
                               </span>
-                            </div>
+                              {isNegative && (
+                                <span className="text-[8px] font-bold text-red-500 bg-red-100/80 px-1.5 py-0.5 rounded uppercase tracking-widest mt-0.5 inline-block">
+                                  {tr('cash_gap')}
+                                </span>
+                              )}
+                              {/* Balance bar */}
+                              <div className="mt-1 h-[3px] w-full rounded-full bg-gray-100 overflow-hidden">
+                                <div
+                                  className={cn("h-full rounded-full transition-all", isNegative ? "bg-red-400" : "bg-emerald-400")}
+                                  style={{ width: `${Math.min(100, Math.abs(bal) / (maxBarValue || 1) * 100)}%` }}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-gray-200 text-xs">–</span>
                           )}
                         </td>
                       );
@@ -391,7 +546,7 @@ export function PaymentCalendar() {
 
       {/* ===== МОДАЛКА ДЕТАЛИЗАЦИИ ===== */}
       <Dialog open={drilldown.open} onOpenChange={(open) => !open && closeDrilldown()}>
-        <DialogContent className="sm:max-w-[560px] p-0 gap-0 overflow-hidden border-none shadow-2xl rounded-2xl">
+        <DialogContent className="sm:max-w-[560px] p-0 gap-0 overflow-hidden border-none shadow-2xl rounded-2xl mx-3">
           <div
             className={cn(
               'px-6 pt-6 pb-5 relative overflow-hidden',
@@ -401,7 +556,7 @@ export function PaymentCalendar() {
             )}
           >
             <div className="absolute -right-4 -top-4 opacity-10">
-               <Receipt className="w-32 h-32" />
+              <Receipt className="w-32 h-32" />
             </div>
             <DialogHeader className="relative z-10">
               <DialogTitle className="flex items-center gap-3 text-lg text-gray-900">
