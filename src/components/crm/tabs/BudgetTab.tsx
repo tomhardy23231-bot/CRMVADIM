@@ -3,7 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import type { Order } from '@/lib/crm-types';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH, calcDeviation, generateWeekOptions } from '@/lib/crm-utils';
+import { formatUAH, calcDeviation, dateToWeekValue, formatDateShort } from '@/lib/crm-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,6 +45,7 @@ interface BudgetTabProps {
 export function BudgetTab({ order }: BudgetTabProps) {
   const {
     updateBudgetItemPlan,
+    updateBudgetItemDate,
     updateTranche,
     addTranche,
     removeTranche,
@@ -54,8 +55,6 @@ export function BudgetTab({ order }: BudgetTabProps) {
     tr,
     lang,
   } = useCRM();
-
-  const weekOptions = generateWeekOptions(lang);
 
   // Модалка добавления статьи
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -170,22 +169,19 @@ export function BudgetTab({ order }: BudgetTabProps) {
   }, [order, calculateFact, totalPlan, totalFact]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 lg:space-y-4">
       <Card className="bg-white shadow-sm hover:shadow-md transition-all duration-200">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Calculator className="w-4.5 h-4.5 text-gray-500" />
+        <CardHeader className="pb-3 px-3 lg:px-6">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <CardTitle className="flex items-center gap-2 text-sm lg:text-base font-semibold">
+              <Calculator className="w-4 h-4 lg:w-4.5 lg:h-4.5 text-gray-500" />
               {tr('budget_title')}
-              <span className="text-xs font-normal text-gray-400 ml-1">
-                — {tr('additional_expenses')}
-              </span>
             </CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 lg:gap-2 flex-wrap">
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs gap-1.5 border-gray-300 text-gray-600 hover:bg-gray-50 transition-all duration-150"
+                className="h-8 text-[11px] lg:text-xs gap-1 border-gray-300 text-gray-600 hover:bg-gray-50 transition-all duration-150"
                 onClick={handleExportExcel}
               >
                 <FileDown className="w-3.5 h-3.5" />
@@ -194,7 +190,7 @@ export function BudgetTab({ order }: BudgetTabProps) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition-all duration-150"
+                className="h-8 text-[11px] lg:text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition-all duration-150"
                 onClick={() => { setNewItemIsIncome(false); setAddDialogOpen(true); }}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -203,7 +199,7 @@ export function BudgetTab({ order }: BudgetTabProps) {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50 transition-all duration-150"
+                className="h-8 text-[11px] lg:text-xs gap-1 border-blue-300 text-blue-700 hover:bg-blue-50 transition-all duration-150"
                 onClick={() => { setNewItemIsIncome(true); setAddDialogOpen(true); }}
               >
                 <CircleDollarSign className="w-3.5 h-3.5" />
@@ -214,280 +210,535 @@ export function BudgetTab({ order }: BudgetTabProps) {
         </CardHeader>
         <CardContent className="p-0">
           {visibleItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-3">
-                <Receipt className="w-7 h-7 text-gray-300" />
+            <div className="flex flex-col items-center justify-center py-12 lg:py-16 text-gray-400">
+              <div className="w-12 h-12 lg:w-14 lg:h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-3">
+                <Receipt className="w-6 h-6 lg:w-7 lg:h-7 text-gray-300" />
               </div>
               <p className="text-sm font-medium text-gray-500">{tr('no_expenses')}</p>
               <p className="text-xs text-gray-400 mt-1">{tr('no_expenses_desc')}</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-xs font-medium text-gray-500 w-[40%]">
-                    {tr('expense_item')}
-                  </TableHead>
-                  <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
-                    {tr('plan')}
-                  </TableHead>
-                  <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
-                    {tr('fact_from_1c')}
-                  </TableHead>
-                  <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
-                    {tr('deviation')}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visibleItems.map((item) => {
-                  const calculatedFact = calculateFact(item.id, item.isIncome, item.name);
-                  const deviation = calcDeviation(item.plan, calculatedFact);
-                  const hasTranches = item.tranches && item.tranches.length > 0;
-                  const tranchesTotal = hasTranches
-                    ? item.tranches.reduce((sum, tt) => sum + tt.amount, 0)
-                    : 0;
-                  const remaining = item.plan - tranchesTotal;
-                  const isOverBudget = remaining < 0;
-                  const canAddTranche = remaining > 0;
+            <>
+              {/* ===== МОБИЛЬНЫЙ: Компактный список с секциями ===== */}
+              <div className="lg:hidden">
 
-                  return (
-                    <React.Fragment key={item.id}>
-                      {/* Основная строка статьи */}
-                      <TableRow className="hover:bg-gray-50 transition-colors duration-150">
-                        {/* Название + кнопка траншей */}
-                        <TableCell className="text-sm text-gray-800 font-medium">
-                          <div className="flex items-center gap-2">
-                            {hasTranches && (
-                              <button
-                                onClick={() => toggleTranches(order.id, item.id)}
-                                className="text-gray-400 hover:text-gray-600 transition-colors"
-                              >
-                                {item.hasTranches ? (
-                                  <ChevronDown className="w-4 h-4" />
-                                ) : (
-                                  <ChevronRight className="w-4 h-4" />
+                {/* --- Секция: Расходы --- */}
+                {expenseItems.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50/60 border-b border-red-100">
+                      <span className="text-[9px] font-black text-red-600 uppercase tracking-widest">Расходы</span>
+                      <span className="text-[9px] font-bold text-red-400 ml-auto">{expenseItems.length} статей</span>
+                    </div>
+                    <div>
+                      {expenseItems.map((item, idx) => {
+                        const calculatedFact = calculateFact(item.id, false, item.name);
+                        const deviation = calcDeviation(item.plan, calculatedFact);
+                        const hasTranches = item.tranches && item.tranches.length > 0;
+                        const tranchesTotal = hasTranches ? item.tranches!.reduce((sum, tt) => sum + tt.amount, 0) : 0;
+                        const remaining = item.plan - tranchesTotal;
+                        const isOverBudget = remaining < 0;
+
+                        return (
+                          <div key={item.id} className={cn('border-b-2 border-gray-200 last:border-0 flex items-stretch', idx % 2 !== 0 ? 'bg-red-50/30' : 'bg-white')}>
+                            {/* Левая цветная полоса */}
+                            <div className={cn('w-[3px] shrink-0', isOverBudget ? 'bg-red-500' : 'bg-red-300')} />
+                            <div className="flex-1 px-3 py-2.5">
+                              {/* Строка 1: Название + удалить */}
+                              <div className="flex items-center gap-2 mb-1.5">
+                                {isOverBudget && <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />}
+                                <span className="flex-1 text-xs font-semibold text-gray-800 leading-tight">{item.name}</span>
+                                <button onClick={() => handleRemoveItem(item.id)} className="text-gray-300 active:text-red-500 p-0.5 shrink-0">
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              {/* Строка 2: Цифры план/факт/откл */}
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[8px] text-gray-400 uppercase tracking-wide mb-0.5">План</p>
+                                  <Input
+                                    type="number"
+                                    value={item.plan}
+                                    onChange={(e) => updateBudgetItemPlan(order.id, item.id, Math.max(0, Number(e.target.value)))}
+                                    className="h-6 text-right text-xs font-semibold p-1 border-gray-200 w-full"
+                                  />
+                                </div>
+                                <div className="w-[1px] bg-gray-200 self-stretch" />
+                                <div className="shrink-0 text-right">
+                                  <p className="text-[8px] text-gray-400 uppercase tracking-wide mb-0.5">Факт</p>
+                                  <p className="text-xs font-semibold text-gray-700 leading-none">{formatUAH(calculatedFact)}</p>
+                                </div>
+                                <div className="w-[1px] bg-gray-200 self-stretch" />
+                                <div className="shrink-0 text-right">
+                                  <p className="text-[8px] text-gray-400 uppercase tracking-wide mb-0.5">Откл</p>
+                                  <p className={cn('text-xs font-bold leading-none', deviation > 0 ? 'text-emerald-600' : deviation < 0 ? 'text-red-600' : 'text-gray-400')}>
+                                    {deviation > 0 ? '+' : ''}{formatUAH(deviation)}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Дата (без траншей) */}
+                              {!item.hasTranches && (
+                                <div className="mt-1.5">
+                                  <input
+                                    type="date"
+                                    value={item.tranches?.[0]?.plannedDate || ''}
+                                    onChange={(e) => updateBudgetItemDate(order.id, item.id, e.target.value, item.plan)}
+                                    className="h-7 w-full text-[10px] border border-gray-200 rounded px-2 focus:border-indigo-400 outline-none transition-colors text-gray-500 bg-white"
+                                  />
+                                </div>
+                              )}
+
+                              {/* Транши: тоггл */}
+                              {hasTranches && (
+                                <button
+                                  onClick={() => toggleTranches(order.id, item.id)}
+                                  className="mt-1.5 flex items-center gap-1 text-[10px] text-indigo-600 font-semibold"
+                                >
+                                  {item.hasTranches ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                  Транши ({item.tranches!.length})
+                                  {isOverBudget && <span className="text-red-500 ml-1">— превышен!</span>}
+                                </button>
+                              )}
+
+                              {/* Раскрытые транши */}
+                              {item.hasTranches && hasTranches && (
+                                <div className="mt-1.5 border border-gray-200 rounded-lg overflow-hidden">
+                                  {item.tranches!.map((tranche) => (
+                                    <div key={tranche.id} className="flex items-center gap-1.5 px-2 py-1.5 border-b border-gray-100 last:border-0 bg-white">
+                                      <input
+                                        type="date"
+                                        value={tranche.plannedDate || ''}
+                                        onChange={(e) => {
+                                          const newDate = e.target.value;
+                                          const weekVal = dateToWeekValue(newDate);
+                                          updateTranche(order.id, item.id, tranche.id, { plannedDate: newDate, month: weekVal || tranche.month });
+                                        }}
+                                        className="h-6 flex-1 text-[10px] border border-gray-200 rounded px-1.5 bg-white focus:border-indigo-400 outline-none"
+                                      />
+                                      <Input
+                                        type="number"
+                                        value={tranche.amount}
+                                        onChange={(e) => updateTranche(order.id, item.id, tranche.id, { amount: Math.max(0, Number(e.target.value)) })}
+                                        className={cn('h-6 w-20 text-right text-xs', isOverBudget ? 'border-red-400 bg-red-50/50' : '')}
+                                      />
+                                      <button onClick={() => handleRemoveTranche(item.id, tranche.id)} className="text-gray-300 active:text-red-500">
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <div className="flex items-center justify-between px-2 py-1.5 bg-gray-50/60">
+                                    <span className={cn('text-[10px] font-bold', isOverBudget ? 'text-red-600' : remaining === 0 ? 'text-emerald-600' : 'text-amber-600')}>
+                                      Остаток: {formatUAH(remaining)}
+                                    </span>
+                                    <Button variant="outline" size="sm" disabled={remaining <= 0} className="h-6 text-[10px] gap-0.5 px-2" onClick={() => handleAddTranche(item.id)}>
+                                      <Plus className="w-2.5 h-2.5" /> Транш
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* --- Секция: Доходы --- */}
+                {incomeItems.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50/60 border-b border-blue-100">
+                      <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Доходы</span>
+                      <span className="text-[9px] font-bold text-blue-400 ml-auto">{incomeItems.length} статей</span>
+                    </div>
+                    <div>
+                      {incomeItems.map((item, idx) => {
+                        const calculatedFact = calculateFact(item.id, true, item.name);
+                        const deviation = calcDeviation(item.plan, calculatedFact);
+                        const hasTranches = item.tranches && item.tranches.length > 0;
+                        const tranchesTotal = hasTranches ? item.tranches!.reduce((sum, tt) => sum + tt.amount, 0) : 0;
+                        const remaining = item.plan - tranchesTotal;
+                        const isOverBudget = remaining < 0;
+
+                        return (
+                          <div key={item.id} className={cn('border-b-2 border-gray-200 last:border-0 flex items-stretch', idx % 2 !== 0 ? 'bg-blue-50/30' : 'bg-white')}>
+                            {/* Левая синяя полоса */}
+                            <div className="w-[3px] shrink-0 bg-blue-400" />
+                            <div className="flex-1 px-3 py-2.5">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <CircleDollarSign className="w-3 h-3 text-blue-500 shrink-0" />
+                                <span className="flex-1 text-xs font-semibold text-gray-800 leading-tight">{item.name}</span>
+                                <button onClick={() => handleRemoveItem(item.id)} className="text-gray-300 active:text-red-500 p-0.5 shrink-0">
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1">
+                                  <p className="text-[8px] text-gray-400 uppercase tracking-wide mb-0.5">План</p>
+                                  <Input
+                                    type="number"
+                                    value={item.plan}
+                                    onChange={(e) => updateBudgetItemPlan(order.id, item.id, Math.max(0, Number(e.target.value)))}
+                                    className="h-6 text-right text-xs font-semibold p-1 border-gray-200 w-full"
+                                  />
+                                </div>
+                                <div className="w-[1px] bg-gray-200 self-stretch" />
+                                <div className="shrink-0 text-right">
+                                  <p className="text-[8px] text-gray-400 uppercase tracking-wide mb-0.5">Факт</p>
+                                  <p className="text-xs font-semibold text-gray-700 leading-none">{formatUAH(calculatedFact)}</p>
+                                </div>
+                                <div className="w-[1px] bg-gray-200 self-stretch" />
+                                <div className="shrink-0 text-right">
+                                  <p className="text-[8px] text-gray-400 uppercase tracking-wide mb-0.5">Откл</p>
+                                  <p className={cn('text-xs font-bold leading-none', deviation > 0 ? 'text-emerald-600' : deviation < 0 ? 'text-red-600' : 'text-gray-400')}>
+                                    {deviation > 0 ? '+' : ''}{formatUAH(deviation)}
+                                  </p>
+                                </div>
+                              </div>
+                              {!item.hasTranches && (
+                                <div className="mt-1.5">
+                                  <input
+                                    type="date"
+                                    value={item.tranches?.[0]?.plannedDate || ''}
+                                    onChange={(e) => updateBudgetItemDate(order.id, item.id, e.target.value, item.plan)}
+                                    className="h-7 w-full text-[10px] border border-gray-200 rounded px-2 focus:border-indigo-400 outline-none text-gray-500 bg-white"
+                                  />
+                                </div>
+                              )}
+                              {hasTranches && (
+                                <button onClick={() => toggleTranches(order.id, item.id)} className="mt-1.5 flex items-center gap-1 text-[10px] text-indigo-600 font-semibold">
+                                  {item.hasTranches ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                  Транши ({item.tranches!.length})
+                                </button>
+                              )}
+                              {item.hasTranches && hasTranches && (
+                                <div className="mt-1.5 border border-gray-200 rounded-lg overflow-hidden">
+                                  {item.tranches!.map((tranche) => (
+                                    <div key={tranche.id} className="flex items-center gap-1.5 px-2 py-1.5 border-b border-gray-100 last:border-0 bg-white">
+                                      <input type="date" value={tranche.plannedDate || ''}
+                                        onChange={(e) => { const newDate = e.target.value; const weekVal = dateToWeekValue(newDate); updateTranche(order.id, item.id, tranche.id, { plannedDate: newDate, month: weekVal || tranche.month }); }}
+                                        className="h-6 flex-1 text-[10px] border border-gray-200 rounded px-1.5 bg-white focus:border-indigo-400 outline-none" />
+                                      <Input type="number" value={tranche.amount}
+                                        onChange={(e) => updateTranche(order.id, item.id, tranche.id, { amount: Math.max(0, Number(e.target.value)) })}
+                                        className="h-6 w-20 text-right text-xs" />
+                                      <button onClick={() => handleRemoveTranche(item.id, tranche.id)} className="text-gray-300 active:text-red-500"><Trash2 className="w-3 h-3" /></button>
+                                    </div>
+                                  ))}
+                                  <div className="flex items-center justify-between px-2 py-1.5 bg-gray-50/60">
+                                    <span className={cn('text-[10px] font-bold', isOverBudget ? 'text-red-600' : remaining === 0 ? 'text-emerald-600' : 'text-amber-600')}>
+                                      Остаток: {formatUAH(remaining)}
+                                    </span>
+                                    <Button variant="outline" size="sm" disabled={remaining <= 0} className="h-6 text-[10px] gap-0.5 px-2" onClick={() => handleAddTranche(item.id)}>
+                                      <Plus className="w-2.5 h-2.5" /> Транш
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                  </div>
+                )}
+
+              </div>
+
+
+              {/* ===== ДЕСКТОПНОЕ представление — таблица ===== */}
+              <div className="hidden lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="text-xs font-medium text-gray-500 w-[40%]">
+                        {tr('expense_item')}
+                      </TableHead>
+                      <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
+                        {tr('plan')}
+                      </TableHead>
+                      <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
+                        {tr('fact_from_1c')}
+                      </TableHead>
+                      <TableHead className="text-xs font-medium text-gray-500 text-right w-[20%]">
+                        {tr('deviation')}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleItems.map((item) => {
+                      const calculatedFact = calculateFact(item.id, !!item.isIncome, item.name);
+                      const deviation = calcDeviation(item.plan, calculatedFact);
+                      const hasTranches = item.tranches && item.tranches.length > 0;
+                      const tranchesTotal = hasTranches
+                        ? item.tranches!.reduce((sum, tt) => sum + tt.amount, 0)
+                        : 0;
+                      const remaining = item.plan - tranchesTotal;
+                      const isOverBudget = remaining < 0;
+                      const canAddTranche = remaining > 0;
+
+                      return (
+                        <React.Fragment key={item.id}>
+                          {/* Основная строка статьи */}
+                          <TableRow className="hover:bg-gray-50 transition-colors duration-150">
+                            {/* Название + кнопка траншей */}
+                            <TableCell className="text-sm text-gray-800 font-medium">
+                              <div className="flex items-center gap-2">
+                                {hasTranches && (
+                                  <button
+                                    onClick={() => toggleTranches(order.id, item.id)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                  >
+                                    {item.hasTranches ? (
+                                      <ChevronDown className="w-4 h-4" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4" />
+                                    )}
+                                  </button>
                                 )}
-                              </button>
-                            )}
-                            {item.isIncome && (
-                              <CircleDollarSign className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                            )}
-                            <span>{item.name}</span>
-                            {isOverBudget && (
-                              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                            )}
-                            <button
-                              onClick={() => handleRemoveItem(item.id)}
-                              className="text-gray-300 hover:text-red-500 transition-colors ml-auto shrink-0"
-                              title="Удалить статью"
+                                {item.isIncome && (
+                                  <CircleDollarSign className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                )}
+                                <span>{item.name}</span>
+                                {isOverBudget && (
+                                  <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                                )}
+                                <button
+                                  onClick={() => handleRemoveItem(item.id)}
+                                  className="text-gray-300 hover:text-red-500 transition-colors ml-auto shrink-0"
+                                  title="Удалить статью"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </TableCell>
+
+                            {/* План (редактируемый Input) */}
+                            <TableCell className="text-right">
+                              <div className="flex flex-col gap-1 items-end ml-auto w-fit">
+                                <Input
+                                  type="number"
+                                  value={item.plan}
+                                  onChange={(e) =>
+                                    updateBudgetItemPlan(
+                                      order.id,
+                                      item.id,
+                                      Math.max(0, Number(e.target.value))
+                                    )
+                                  }
+                                  className="h-8 w-28 text-right text-sm font-medium"
+                                />
+                                {!item.hasTranches && (
+                                  <div className="relative">
+                                    <input
+                                      type="date"
+                                      value={item.tranches?.[0]?.plannedDate || ''}
+                                      onChange={(e) => {
+                                        updateBudgetItemDate(order.id, item.id, e.target.value, item.plan);
+                                      }}
+                                      className="h-7 w-28 text-xs border border-gray-200 rounded px-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/50 outline-none transition-colors text-gray-500 cursor-pointer hover:border-gray-300"
+                                      title={tr("date_single_tranche") || "Указать планируемую дату"}
+                                    />
+                                    {!item.tranches?.[0]?.plannedDate && (
+                                      <div className="absolute inset-0 bg-gray-50/50 border border-dashed border-gray-300 pointer-events-none rounded flex items-center justify-center">
+                                        <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap px-1 overflow-hidden">
+                                          + {tr("date_select") || "Выбрать дату"}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+
+                            {/* Факт из 1С */}
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1.5 text-sm font-semibold text-gray-700 bg-gray-100/80 px-2 py-1 rounded w-fit ml-auto border border-gray-200" title="Сумируется из платежей 1С во вкладке 'Оплаты План-Факт'">
+                                <Receipt className="w-3 h-3 text-blue-500" />
+                                {formatUAH(calculatedFact)}
+                              </div>
+                            </TableCell>
+
+                            {/* Отклонение */}
+                            <TableCell
+                              className={cn(
+                                'text-right text-sm font-semibold',
+                                deviation > 0
+                                  ? 'text-emerald-600'
+                                  : deviation < 0
+                                    ? 'text-red-600'
+                                    : 'text-gray-400'
+                              )}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </TableCell>
-
-                        {/* План (редактируемый Input) */}
-                        <TableCell className="text-right">
-                          <Input
-                            type="number"
-                            value={item.plan}
-                            onChange={(e) =>
-                              updateBudgetItemPlan(
-                                order.id,
-                                item.id,
-                                Math.max(0, Number(e.target.value))
-                              )
-                            }
-                            className="h-8 w-28 text-right text-sm font-medium ml-auto"
-                          />
-                        </TableCell>
-
-                        {/* Факт из 1С (Вычисляется Автоматически) */}
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5 text-sm font-semibold text-gray-700 bg-gray-100/80 px-2 py-1 rounded w-fit ml-auto border border-gray-200" title="Сумируется из платежей 1С во вкладке 'Оплаты План-Факт'">
-                            <Receipt className="w-3 h-3 text-blue-500" />
-                            {formatUAH(calculatedFact)}
-                          </div>
-                        </TableCell>
-
-                        {/* Отклонение */}
-                        <TableCell
-                          className={cn(
-                            'text-right text-sm font-semibold',
-                            deviation > 0
-                              ? 'text-emerald-600'
-                              : deviation < 0
-                                ? 'text-red-600'
-                                : 'text-gray-400'
-                          )}
-                        >
-                          {deviation > 0 ? '+' : ''}
-                          {formatUAH(deviation)}
-                        </TableCell>
-                      </TableRow>
-
-                      {/* Раскрытые транши */}
-                      {item.hasTranches && hasTranches && (
-                        <>
-                          <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                            <TableCell colSpan={4} className="px-0 py-0">
-                              <div className="mx-4 border-t border-dashed border-gray-300" />
+                              {deviation > 0 ? '+' : ''}
+                              {formatUAH(deviation)}
                             </TableCell>
                           </TableRow>
 
-                          {item.tranches!.map((tranche) => (
-                            <TableRow key={tranche.id} className={cn(
-                              'transition-colors',
-                              isOverBudget
-                                ? 'bg-red-50/40 hover:bg-red-50/60'
-                                : 'bg-emerald-50/30 hover:bg-emerald-50/50'
-                            )}>
-                              {/* Транш: название + неделя */}
-                              <TableCell className="pl-12">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-500">{tr('tranche')}</span>
-                                  <Select
-                                    value={tranche.month}
-                                    onValueChange={(val) =>
-                                      updateTranche(order.id, item.id, tranche.id, {
-                                        month: val,
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger className="h-7 w-[120px] text-xs">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {weekOptions.map((opt) => (
-                                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </TableCell>
+                          {/* Раскрытые транши */}
+                          {item.hasTranches && hasTranches && (
+                            <>
+                              <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                                <TableCell colSpan={4} className="px-0 py-0">
+                                  <div className="mx-4 border-t border-dashed border-gray-300" />
+                                </TableCell>
+                              </TableRow>
 
-                              {/* Сумма транша (редактируемый Input с валидацией) */}
-                              <TableCell className="text-right" colSpan={2}>
-                                <div className="flex items-center justify-end gap-2">
-                                  <Input
-                                    type="number"
-                                    value={tranche.amount}
-                                    onChange={(e) =>
-                                      updateTranche(order.id, item.id, tranche.id, {
-                                        amount: Math.max(0, Number(e.target.value)),
-                                      })
-                                    }
-                                    aria-invalid={isOverBudget}
-                                    className={cn(
-                                      'h-7 w-28 text-right text-xs ml-auto',
-                                      isOverBudget
-                                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500 bg-red-50/50'
-                                        : ''
-                                    )}
-                                    placeholder="0"
-                                  />
-                                  <span className="text-xs text-gray-500">₴</span>
-                                </div>
-                              </TableCell>
+                              {item.tranches!.map((tranche) => (
+                                <TableRow key={tranche.id} className={cn(
+                                  'transition-colors',
+                                  isOverBudget
+                                    ? 'bg-red-50/40 hover:bg-red-50/60'
+                                    : 'bg-emerald-50/30 hover:bg-emerald-50/50'
+                                )}>
+                                  {/* Транш: название + неделя */}
+                                  <TableCell className="pl-12">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-500">{tr('tranche')}</span>
+                                      <input
+                                        type="date"
+                                        value={tranche.plannedDate || ''}
+                                        onChange={(e) => {
+                                          const newDate = e.target.value;
+                                          const weekVal = dateToWeekValue(newDate);
+                                          updateTranche(order.id, item.id, tranche.id, {
+                                            plannedDate: newDate,
+                                            month: weekVal || tranche.month,
+                                          });
+                                        }}
+                                        className="h-7 w-[140px] text-xs border border-gray-200 rounded px-2 bg-white hover:border-gray-300 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/50 outline-none transition-colors"
+                                      />
+                                      {tranche.plannedDate && (
+                                        <span className="text-[10px] text-gray-400 font-medium">
+                                          {formatDateShort(tranche.plannedDate)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </TableCell>
 
-                              {/* Кнопка удаления транша */}
-                              <TableCell className="text-right">
+                                  {/* Сумма транша */}
+                                  <TableCell className="text-right" colSpan={2}>
+                                    <div className="flex items-center justify-end gap-2">
+                                      <Input
+                                        type="number"
+                                        value={tranche.amount}
+                                        onChange={(e) =>
+                                          updateTranche(order.id, item.id, tranche.id, {
+                                            amount: Math.max(0, Number(e.target.value)),
+                                          })
+                                        }
+                                        aria-invalid={isOverBudget}
+                                        className={cn(
+                                          'h-7 w-28 text-right text-xs ml-auto',
+                                          isOverBudget
+                                            ? 'border-red-500 focus:ring-red-500 focus:border-red-500 bg-red-50/50'
+                                            : ''
+                                        )}
+                                        placeholder="0"
+                                      />
+                                      <span className="text-xs text-gray-500">₴</span>
+                                    </div>
+                                  </TableCell>
+
+                                  {/* Кнопка удаления транша */}
+                                  <TableCell className="text-right">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-gray-400 hover:text-red-500 transition-colors"
+                                      onClick={() => handleRemoveTranche(item.id, tranche.id)}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+
+                              {/* Строка: осталось распределить */}
+                              <TableRow className={cn(
+                                isOverBudget ? 'bg-red-50/40 hover:bg-red-50/40' : 'bg-emerald-50/30 hover:bg-emerald-50/30'
+                              )}>
+                                <TableCell colSpan={4} className="px-12 py-2">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className={cn(
+                                          'text-xs font-semibold',
+                                          isOverBudget ? 'text-red-600' : remaining === 0 ? 'text-emerald-600' : 'text-amber-600'
+                                        )}
+                                      >
+                                        {tr('remaining')}: {formatUAH(remaining)}
+                                      </span>
+                                      {isOverBudget && (
+                                        <span className="text-[10px] font-medium text-red-500 bg-red-100 px-1.5 py-0.5 rounded">
+                                          {tr('budget_overflow')}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={!canAddTranche}
+                                      className={cn(
+                                        'h-7 text-xs gap-1 transition-all duration-150 hover:-translate-y-0.5',
+                                        canAddTranche
+                                          ? 'bg-emerald-100 border border-emerald-300 text-emerald-700 hover:bg-emerald-200'
+                                          : 'border-gray-200 text-gray-400 cursor-not-allowed'
+                                      )}
+                                      onClick={() => handleAddTranche(item.id)}
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                      {tr('add_tranche')}
+                                    </Button>
+                                  </div>
+                                  {isOverBudget && (
+                                    <p className="text-[10px] text-red-400 mt-1.5">
+                                      {tr('budget_overflow_desc')}
+                                    </p>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            </>
+                          )}
+
+                          {/* Кнопка «Разбить на транши» */}
+                          {hasTranches && !item.hasTranches && (
+                            <TableRow className="hover:bg-gray-50">
+                              <TableCell colSpan={4} className="px-12 py-1">
                                 <Button
                                   variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-gray-400 hover:text-red-500 transition-colors"
-                                  onClick={() => handleRemoveTranche(item.id, tranche.id)}
+                                  size="sm"
+                                  className="text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 gap-1 h-7 transition-all duration-150"
+                                  onClick={() => toggleTranches(order.id, item.id)}
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <ChevronRight className="w-3 h-3" />
+                                  {tr('split_to_tranches')} ({item.tranches!.length})
                                 </Button>
                               </TableCell>
                             </TableRow>
-                          ))}
-
-                          {/* Строка: осталось распределить */}
-                          <TableRow className={cn(
-                            isOverBudget ? 'bg-red-50/40 hover:bg-red-50/40' : 'bg-emerald-50/30 hover:bg-emerald-50/30'
-                          )}>
-                            <TableCell colSpan={4} className="px-12 py-2">
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={cn(
-                                      'text-xs font-semibold',
-                                      isOverBudget ? 'text-red-600' : remaining === 0 ? 'text-emerald-600' : 'text-amber-600'
-                                    )}
-                                  >
-                                    {tr('remaining')}: {formatUAH(remaining)}
-                                  </span>
-                                  {isOverBudget && (
-                                    <span className="text-[10px] font-medium text-red-500 bg-red-100 px-1.5 py-0.5 rounded">
-                                      {tr('budget_overflow')}
-                                    </span>
-                                  )}
-                                </div>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={!canAddTranche}
-                                  className={cn(
-                                    'h-7 text-xs gap-1 transition-all duration-150 hover:-translate-y-0.5',
-                                    canAddTranche
-                                      ? 'bg-emerald-100 border border-emerald-300 text-emerald-700 hover:bg-emerald-200'
-                                      : 'border-gray-200 text-gray-400 cursor-not-allowed'
-                                  )}
-                                  onClick={() => handleAddTranche(item.id)}
-                                >
-                                  <Plus className="w-3 h-3" />
-                                  {tr('add_tranche')}
-                                </Button>
-                              </div>
-                              {/* Подсказка при превышении */}
-                              {isOverBudget && (
-                                <p className="text-[10px] text-red-400 mt-1.5">
-                                  {tr('budget_overflow_desc')}
-                                </p>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        </>
-                      )}
-
-                      {/* Кнопка «Разбить на транши» (если ещё не разбито) */}
-                      {hasTranches && !item.hasTranches && (
-                        <TableRow className="hover:bg-gray-50">
-                          <TableCell colSpan={4} className="px-12 py-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 gap-1 h-7 transition-all duration-150"
-                              onClick={() => toggleTranches(order.id, item.id)}
-                            >
-                              <ChevronRight className="w-3 h-3" />
-                              {tr('split_to_tranches')} ({item.tranches!.length})
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
 
           {/* Итого по бюджету */}
           {visibleItems.length > 0 && (
-            <div className="px-6 py-3 bg-gray-50 border-t flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-gray-600">
+            <div className="px-3 lg:px-6 py-3 bg-gray-50 border-t flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
+              <span className="text-xs lg:text-sm font-semibold text-gray-600">
                 {tr('total_plan')}: {formatUAH(totalPlan)}
               </span>
-              <span className="text-sm font-semibold text-gray-600">
+              <span className="text-xs lg:text-sm font-semibold text-gray-600">
                 {tr('total_fact')}: {formatUAH(totalFact)}
               </span>
               <span
                 className={cn(
-                  'text-sm font-bold',
+                  'text-xs lg:text-sm font-bold',
                   totalDeviation >= 0 ? 'text-emerald-600' : 'text-red-600'
                 )}
               >
@@ -501,7 +752,7 @@ export function BudgetTab({ order }: BudgetTabProps) {
 
       {/* ===== Модалка добавления статьи ===== */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md mx-4">
           <DialogHeader>
             <DialogTitle>
               {newItemIsIncome ? tr('income_item') : tr('expense_item')}
@@ -510,14 +761,13 @@ export function BudgetTab({ order }: BudgetTabProps) {
               Выберите из шаблонов или введите своё название
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-4">
+          <div className="py-3 lg:py-4 space-y-3 lg:space-y-4">
             {/* Быстрые шаблоны */}
             <div className="flex flex-wrap gap-1.5">
               {(newItemIsIncome
                 ? ['Прибыль', 'Допоплата', 'Бонус', 'Возврат']
                 : ['Проектирование', 'Закупные', 'Сборка', 'Погрузка', 'Доставка', 'Разгрузка', 'Монтаж', 'Бонус конструктора', 'Налоги', 'Бонус менеджера', 'Бонус тендера', 'Логистика', 'Аренда техники', 'Упаковка', 'Страхование']
               ).filter(tpl => {
-                // Не показываем шаблоны если статья с таким именем уже есть в заказе
                 return !order.budgetItems.some(b => b.name === tpl);
               }).map(tpl => (
                 <button
@@ -528,10 +778,10 @@ export function BudgetTab({ order }: BudgetTabProps) {
                     toast.success(tr('toast_budget_item_added'));
                   }}
                   className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-150 hover:-translate-y-0.5',
+                    'px-2.5 py-1.5 text-[11px] lg:text-xs font-medium rounded-lg border transition-all duration-150 active:scale-95',
                     newItemIsIncome
-                      ? 'border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100'
-                      : 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                      ? 'border-blue-200 text-blue-700 bg-blue-50 active:bg-blue-100'
+                      : 'border-emerald-200 text-emerald-700 bg-emerald-50 active:bg-emerald-100'
                   )}
                 >
                   + {tpl}
@@ -554,7 +804,7 @@ export function BudgetTab({ order }: BudgetTabProps) {
               onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
             />
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
               {tr('cancel')}
             </Button>
