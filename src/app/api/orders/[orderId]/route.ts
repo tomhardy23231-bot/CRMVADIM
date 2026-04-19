@@ -25,28 +25,31 @@ export async function GET(request: Request, { params }: { params: Promise<{ orde
   }
 }
 
-// PUT /api/orders/[orderId] - Update order details
+// PUT /api/orders/[orderId] - Partial update (only fields sent in body are updated)
 export async function PUT(request: Request, { params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params;
   try {
     const body = await request.json();
 
-    // Partial update of the order 
-    // We only update top-level fields for now
+    // Build data object dynamically — only include fields present in the request
+    const data: Record<string, unknown> = {};
+
+    if (body.status !== undefined)             data.status = body.status;
+    if (body.isArchived !== undefined)         data.isArchived = body.isArchived;
+    if (body.deadline !== undefined)           data.deadline = body.deadline;
+    if (body.productionStart !== undefined)    data.productionStart = body.productionStart;
+    if (body.assemblyStart !== undefined)      data.assemblyStart = body.assemblyStart;
+    if (body.shippingStart !== undefined)      data.shippingStart = body.shippingStart;
+    if (body.isProductionStarted !== undefined) data.isProductionStarted = body.isProductionStarted;
+    if (body.isAssemblyStarted !== undefined)  data.isAssemblyStarted = body.isAssemblyStarted;
+    if (body.isShipped !== undefined)          data.isShipped = body.isShipped;
+    if (body.orderAmount !== undefined)        data.orderAmount = body.orderAmount;
+    if (body.isAmountManual !== undefined)     data.isAmountManual = body.isAmountManual;
+    if (body.expectedPaymentDate !== undefined) data.expectedPaymentDate = body.expectedPaymentDate;
+
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: body.status,
-        deadline: body.deadline,
-        productionStart: body.productionStart,
-        assemblyStart: body.assemblyStart,
-        shippingStart: body.shippingStart,
-        isProductionStarted: body.isProductionStarted,
-        isAssemblyStarted: body.isAssemblyStarted,
-        isShipped: body.isShipped,
-        orderAmount: body.orderAmount,
-        isAmountManual: body.isAmountManual,
-      },
+      data,
     });
 
     return NextResponse.json(updatedOrder);

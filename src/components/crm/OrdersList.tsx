@@ -2,8 +2,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useCRM } from '@/lib/crm-context';
-import { formatUAH, calcMargin } from '@/lib/crm-utils';
-import { Download, Loader2, Search, Eye, PackageOpen, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Trash2, Filter } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
+import { formatUAH, calcMargin, calcSmartHybridCost } from '@/lib/crm-utils';
+import { Download, Loader2, Search, Eye, PackageOpen, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Trash2, Filter, ChevronRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,22 +43,44 @@ import { toast } from 'sonner';
 // ============================================================
 
 const statusColors: Record<string, string> = {
-  'Новый': 'bg-blue-100 text-blue-700',
+  'Проектирование': 'bg-slate-100 text-slate-700',
+  'Закупка материалов': 'bg-cyan-100 text-cyan-700',
   'В производстве': 'bg-amber-100 text-amber-700',
   'Сборка': 'bg-purple-100 text-purple-700',
-  'Отгружен': 'bg-emerald-100 text-emerald-700',
+  'Доставка': 'bg-indigo-100 text-indigo-700',
+  'Отгружен': 'bg-blue-100 text-blue-700',
+  'Рекламации': 'bg-red-100 text-red-700',
+  'Выполнен': 'bg-emerald-100 text-emerald-700',
+  'Оплачен': 'bg-green-100 text-green-700',
 };
 
-const statusFilterOptions = ['Все', 'Новый', 'В производстве', 'Сборка', 'Отгружен'] as const;
+const statusDotColors: Record<string, string> = {
+  'Проектирование': 'bg-slate-500',
+  'Закупка материалов': 'bg-cyan-500',
+  'В производстве': 'bg-amber-500',
+  'Сборка': 'bg-purple-500',
+  'Доставка': 'bg-indigo-500',
+  'Отгружен': 'bg-blue-500',
+  'Рекламации': 'bg-red-500',
+  'Выполнен': 'bg-emerald-500',
+  'Оплачен': 'bg-green-500',
+};
+
+const statusFilterOptions = ['Все', 'Проектирование', 'Закупка материалов', 'В производстве', 'Сборка', 'Доставка', 'Отгружен', 'Рекламации', 'Выполнен', 'Оплачен'] as const;
 
 type SortKey = 'amount' | 'deadline';
 type SortDirection = 'asc' | 'desc';
 
 const statusTranslateMap: Record<string, string> = {
-  'Новый': 'new_status',
-  'В производстве': 'in_production',
-  'Сборка': 'assembly',
-  'Отгружен': 'shipped',
+  'Проектирование': 'status_design',
+  'Закупка материалов': 'status_purchasing',
+  'В производстве': 'status_production',
+  'Сборка': 'status_assembly',
+  'Доставка': 'status_delivery',
+  'Отгружен': 'status_shipped',
+  'Рекламации': 'status_claims',
+  'Выполнен': 'status_completed',
+  'Оплачен': 'status_paid',
 };
 
 /** Тип данных тендера из 1С */
@@ -76,6 +99,7 @@ function SortIcon({ sortConfig, columnKey }: { sortConfig: { key: SortKey; direc
 
 interface OrdersListProps {
   onSelectOrder: (orderId: string) => void;
+  isArchive?: boolean;
 }
 
 // ============================================================
@@ -150,12 +174,13 @@ function ImportDialog({ onImported }: { onImported: () => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-emerald-600 hover:bg-emerald-700 text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          <Download className="w-4 h-4 mr-2" />
-          {tr('import_from_1c')}
+        <Button className="bg-emerald-600 hover:bg-emerald-700 text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md h-9 text-xs lg:text-sm">
+          <Download className="w-4 h-4 mr-1.5 lg:mr-2" />
+          <span className="hidden sm:inline">{tr('import_from_1c')}</span>
+          <span className="sm:hidden">Импорт 1С</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col mx-2">
         <DialogHeader>
           <DialogTitle>Импорт Тендера из 1С</DialogTitle>
           <DialogDescription>
@@ -180,7 +205,7 @@ function ImportDialog({ onImported }: { onImported: () => void }) {
         </div>
 
         {/* Список тендеров */}
-        <div className="flex-1 overflow-y-auto border rounded-lg">
+        <div className="flex-1 overflow-y-auto border rounded-lg mobile-scroll">
           {loadingList ? (
             <div className="flex items-center justify-center py-16 text-gray-400">
               <Loader2 className="w-6 h-6 animate-spin mr-2" />
@@ -192,48 +217,36 @@ function ImportDialog({ onImported }: { onImported: () => void }) {
               <p className="text-sm">Тендеры не найдены</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-xs font-medium text-gray-500">Название Тендера</TableHead>
-                  <TableHead className="w-32 text-right">Действие</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((contractor) => {
-                  const imported = alreadyImported.has(contractor.id);
-                  const isLoading = importingId === contractor.id;
-                  return (
-                    <TableRow key={contractor.id} className={cn('transition-colors', imported && 'opacity-50')}>
-                      <TableCell className="text-sm font-semibold text-gray-800">
-                        {contractor.name}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          onClick={() => handleImport(contractor)}
-                          disabled={imported || isLoading}
-                          className={cn(
-                            'text-xs h-7 px-3',
-                            imported
-                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                          )}
-                        >
-                          {isLoading ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : imported ? (
-                            'Добавлен'
-                          ) : (
-                            'Импорт'
-                          )}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <div className="divide-y divide-gray-100">
+              {filtered.map((contractor) => {
+                const imported = alreadyImported.has(contractor.id);
+                const isLoading = importingId === contractor.id;
+                return (
+                  <div key={contractor.id} className={cn('flex items-center justify-between gap-3 px-4 py-3', imported && 'opacity-50')}>
+                    <span className="text-sm font-semibold text-gray-800 truncate flex-1">{contractor.name}</span>
+                    <Button
+                      size="sm"
+                      onClick={() => handleImport(contractor)}
+                      disabled={imported || isLoading}
+                      className={cn(
+                        'text-xs h-8 px-3 shrink-0',
+                        imported
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      )}
+                    >
+                      {isLoading ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : imported ? (
+                        'Добавлен'
+                      ) : (
+                        'Импорт'
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </DialogContent>
@@ -241,12 +254,16 @@ function ImportDialog({ onImported }: { onImported: () => void }) {
   );
 }
 
-export function OrdersList({ onSelectOrder }: OrdersListProps) {
+export const OrdersList = React.memo(function OrdersList({ onSelectOrder, isArchive = false }: OrdersListProps) {
   const { orders, tr, removeOrder } = useCRM();
+  const { hasPermission } = useAuth();
   const [search, setSearch] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('Все');
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
+  const canEditOrders = hasPermission('canEditOrders');
+  const canImportFrom1C = hasPermission('canImportFrom1C');
 
   // Имя заказа, который удаляем (для отображения в диалоге)
   const deleteTargetName = deleteTargetId ? orders.find(o => o.id === deleteTargetId)?.name || '' : '';
@@ -255,8 +272,9 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
   const filtered = useMemo(() => {
     let result = orders.filter(
       (o) =>
-        o.id.toLowerCase().includes(search.toLowerCase()) ||
-        o.name.toLowerCase().includes(search.toLowerCase())
+        (o.id.toLowerCase().includes(search.toLowerCase()) ||
+        o.name.toLowerCase().includes(search.toLowerCase())) &&
+        !!o.isArchived === isArchive
     );
 
     // Фильтр по статусу
@@ -278,7 +296,7 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
     }
 
     return result;
-  }, [orders, search, sortConfig, statusFilter]);
+  }, [orders, search, sortConfig, statusFilter, isArchive]);
 
   const handleSort = (key: SortKey) => {
     setSortConfig((prev) => {
@@ -298,52 +316,54 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
 
   // Количество по статусам для бейджей
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { 'Все': orders.length };
-    for (const o of orders) {
+    const scoped = orders.filter((o) => !!o.isArchived === isArchive);
+    const counts: Record<string, number> = { 'Все': scoped.length };
+    for (const o of scoped) {
       counts[o.status] = (counts[o.status] || 0) + 1;
     }
     return counts;
-  }, [orders]);
+  }, [orders, isArchive]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 lg:space-y-4">
       {/* Шапка с поиском и кнопкой импорта */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
+      <div className="flex items-center gap-2 lg:gap-3">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input
             placeholder={tr('search_placeholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 h-9 lg:h-10"
           />
         </div>
 
-        <ImportDialog onImported={() => {}} />
+        {!isArchive && canImportFrom1C && <ImportDialog onImported={() => {}} />}
       </div>
 
-      {/* Фильтр по статусам */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Filter className="w-4 h-4 text-gray-400 shrink-0" />
+      {/* Фильтр по статусам — горизонтальный скролл на мобильном */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 mobile-hide-scrollbar -mx-3 px-3 lg:mx-0 lg:px-0 lg:flex-wrap">
+        <Filter className="w-4 h-4 text-gray-400 shrink-0 hidden lg:block" />
         {statusFilterOptions.map((status) => {
           const isActive = statusFilter === status;
           const count = statusCounts[status] || 0;
+          if (count === 0 && status !== 'Все') return null;
           return (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
               className={cn(
-                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border',
+                'inline-flex items-center gap-1 px-2.5 lg:px-3 py-1.5 rounded-full text-[11px] lg:text-xs font-medium transition-all duration-200 border shrink-0 whitespace-nowrap',
                 isActive
                   ? status === 'Все'
                     ? 'bg-gray-900 text-white border-gray-900 shadow-sm'
                     : `${statusColors[status] || 'bg-gray-100 text-gray-700'} border-current shadow-sm`
-                  : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                  : 'bg-white text-gray-500 border-gray-200 active:bg-gray-50'
               )}
             >
               {status === 'Все' ? status : tr(statusTranslateMap[status] || status)}
               <span className={cn(
-                'text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center',
+                'text-[10px] font-bold rounded-full min-w-[16px] h-[16px] flex items-center justify-center',
                 isActive ? 'bg-white/20 text-current' : 'bg-gray-100 text-gray-500'
               )}>
                 {count}
@@ -353,8 +373,87 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
         })}
       </div>
 
-      {/* Таблица заказов */}
-      <Card className="bg-white shadow-sm">
+      {/* ===== МОБИЛЬНОЕ представление — карточки ===== */}
+      <div className="lg:hidden space-y-2">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+            <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-3">
+              <PackageOpen className="w-7 h-7 text-gray-300" />
+            </div>
+            <p className="text-sm font-medium text-gray-500">{tr('no_orders')}</p>
+            <p className="text-xs text-gray-400 mt-1">{tr('no_orders_desc')}</p>
+          </div>
+        ) : (
+          filtered.map((order) => {
+            const smartHybridCost = calcSmartHybridCost(order);
+            const margin = calcMargin(order.orderAmount, smartHybridCost);
+            return (
+              <div
+                key={order.id}
+                className="bg-white rounded-xl border border-gray-100 shadow-sm active:shadow-none active:bg-gray-50 transition-all duration-150 overflow-hidden"
+                onClick={() => onSelectOrder(order.id)}
+              >
+                <div className="p-3.5">
+                  {/* Top row: ID + Status + Margin */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-bold text-gray-400">
+                        {order.externalId || order.id.slice(0, 8)}
+                      </span>
+                      <Badge
+                        variant="secondary"
+                        className={cn('text-[10px] px-1.5 py-0', statusColors[order.status] || 'bg-gray-100 text-gray-700')}
+                      >
+                        {tr(statusTranslateMap[order.status] || order.status)}
+                      </Badge>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                  </div>
+
+                  {/* Название */}
+                  <p className="text-sm font-semibold text-gray-800 leading-snug mb-2.5 line-clamp-2">
+                    {order.name}
+                  </p>
+
+                  {/* Bottom row: Сумма + Маржа + Дедлайн */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase tracking-wide">{tr('order_amount')}</p>
+                        <p className={cn(
+                          "text-sm font-bold",
+                          order.isAmountManual ? "text-emerald-600" : "text-red-500"
+                        )}>
+                          {order.orderAmount > 0 ? formatUAH(order.orderAmount) : '—'}
+                        </p>
+                      </div>
+                      <div className="w-px h-6 bg-gray-100" />
+                      <div>
+                        <p className="text-[9px] text-gray-400 uppercase tracking-wide">{tr('margin')}</p>
+                        <p className={cn(
+                          "text-sm font-bold",
+                          margin >= 20 ? 'text-emerald-600' : margin >= 10 ? 'text-amber-600' : 'text-red-600'
+                        )}>
+                          {order.orderAmount > 0 ? `${margin}%` : '—'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[9px] text-gray-400 uppercase tracking-wide">{tr('deadline')}</p>
+                      <p className="text-xs font-medium text-gray-600">
+                        {new Date(order.deadline).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* ===== ДЕСКТОПНОЕ представление — таблица ===== */}
+      <Card className="bg-white shadow-sm hidden lg:block">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -399,7 +498,17 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
                 </TableRow>
               ) : (
                 filtered.map((order) => {
-                  const margin = calcMargin(order.orderAmount, order.plannedCost);
+                  // Вычисляем гибридную себестоимость
+                  const smartHybridCost = order.budgetItems.filter(b => !b.isIncome).reduce((sum, b) => {
+                    if (b.name === 'Материалы (План)') {
+                      return sum + (b.fact > 0 ? b.fact : b.plan);
+                    }
+                    const linkedPayments = (order.payments || []).filter(p => p.budgetItemId === b.id);
+                    const paymentsSum = linkedPayments.reduce((acc, p) => acc + p.expense, 0);
+                    return sum + (paymentsSum > 0 ? paymentsSum : b.plan);
+                  }, 0);
+                  
+                  const margin = calcMargin(order.orderAmount, smartHybridCost);
                   return (
                     <TableRow
                       key={order.id}
@@ -459,17 +568,19 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-gray-400 hover:text-red-600 transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteTargetId(order.id);
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          {canEditOrders && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-gray-400 hover:text-red-600 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTargetId(order.id);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -483,7 +594,7 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
 
       {/* AlertDialog подтверждения удаления */}
       <AlertDialog open={!!deleteTargetId} onOpenChange={(open) => !open && setDeleteTargetId(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="mx-4 max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить тендер?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -503,4 +614,4 @@ export function OrdersList({ onSelectOrder }: OrdersListProps) {
       </AlertDialog>
     </div>
   );
-}
+});

@@ -76,7 +76,7 @@ const ACTION_LABELS: Record<string, string> = {
 
 type SettingsTab = 'users' | 'permissions' | 'audit';
 
-export function Settings() {
+export const Settings = React.memo(function Settings() {
   const { tr } = useCRM();
   const [activeTab, setActiveTab] = useState<SettingsTab>('users');
   const [users, setUsers] = useState<UserData[]>([]);
@@ -247,20 +247,20 @@ export function Settings() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 lg:space-y-6">
       {/* Заголовок */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center">
-            <UserCog className="w-5 h-5 text-white" />
+        <h1 className="text-lg lg:text-2xl font-bold text-gray-900 flex items-center gap-2 lg:gap-3">
+          <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-xl bg-gray-900 flex items-center justify-center shrink-0">
+            <UserCog className="w-4 h-4 lg:w-5 lg:h-5 text-white" />
           </div>
           Настройки
         </h1>
-        <p className="text-sm text-gray-500 mt-1 ml-[52px]">Управление пользователями, правами доступа и журнал действий</p>
+        <p className="text-xs lg:text-sm text-gray-500 mt-1 ml-10 lg:ml-[52px]">Управление пользователями, правами и журнал</p>
       </div>
 
-      {/* Табы */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+      {/* Табы — горизонтальный скролл на мобильном */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit max-w-full overflow-x-auto mobile-hide-scrollbar">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (
@@ -268,7 +268,7 @@ export function Settings() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                'flex items-center gap-1.5 lg:gap-2 px-3 lg:px-4 py-2 rounded-lg text-xs lg:text-sm font-medium transition-all duration-200 whitespace-nowrap shrink-0',
                 activeTab === tab.id
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -283,29 +283,30 @@ export function Settings() {
 
       {/* === Вкладка: Пользователи === */}
       {activeTab === 'users' && (
-        <div className="space-y-4">
+        <div className="space-y-3 lg:space-y-4">
           {/* Кнопка создания */}
           <div className="flex justify-between items-center">
-            <p className="text-sm text-gray-500">{users.length} пользователей</p>
+            <p className="text-xs lg:text-sm text-gray-500">{users.length} пользователей</p>
             <Button
               onClick={() => setShowCreateForm(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 lg:gap-2 h-9 text-xs lg:text-sm"
             >
               <Plus className="w-4 h-4" />
-              Создать аккаунт
+              <span className="hidden sm:inline">Создать аккаунт</span>
+              <span className="sm:hidden">Создать</span>
             </Button>
           </div>
 
           {/* Форма создания */}
           {showCreateForm && (
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm space-y-4">
-              <h3 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+            <div className="bg-white border border-gray-200 rounded-xl p-4 lg:p-6 shadow-sm space-y-3 lg:space-y-4">
+              <h3 className="text-sm lg:text-md font-semibold text-gray-900 flex items-center gap-2">
                 <Plus className="w-4 h-4 text-emerald-600" />
                 Новый пользователь
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Имя</label>
+                  <label className="text-xs lg:text-sm font-medium text-gray-700 mb-1 lg:mb-1.5 block">Имя</label>
                   <Input
                     value={newUser.firstName}
                     onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
@@ -313,7 +314,7 @@ export function Settings() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Фамилия</label>
+                  <label className="text-xs lg:text-sm font-medium text-gray-700 mb-1 lg:mb-1.5 block">Фамилия</label>
                   <Input
                     value={newUser.lastName}
                     onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
@@ -321,7 +322,7 @@ export function Settings() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Логин</label>
+                  <label className="text-xs lg:text-sm font-medium text-gray-700 mb-1 lg:mb-1.5 block">Логин</label>
                   <Input
                     value={newUser.login}
                     onChange={(e) => setNewUser({ ...newUser, login: e.target.value })}
@@ -329,7 +330,7 @@ export function Settings() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Пароль</label>
+                  <label className="text-xs lg:text-sm font-medium text-gray-700 mb-1 lg:mb-1.5 block">Пароль</label>
                   <div className="relative">
                     <Input
                       type={showNewPassword ? 'text' : 'password'}
@@ -348,7 +349,7 @@ export function Settings() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Роль</label>
+                  <label className="text-xs lg:text-sm font-medium text-gray-700 mb-1 lg:mb-1.5 block">Роль</label>
                   <div className="relative">
                     <select
                       value={newUser.role}
@@ -376,8 +377,83 @@ export function Settings() {
             </div>
           )}
 
-          {/* Таблица пользователей */}
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          {/* Пользователи — мобильные карточки */}
+          <div className="lg:hidden space-y-2">
+            {isLoadingUsers ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              </div>
+            ) : (
+              users.map(user => (
+                <div key={user.id} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className={cn(
+                      'w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0',
+                      user.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'
+                    )}>
+                      {user.firstName[0]}{user.lastName[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{user.firstName} {user.lastName}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <code className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{user.login}</code>
+                        <Badge variant="secondary" className={cn('text-[10px] px-1.5', ROLE_COLORS[user.role])}>
+                          {ROLE_LABELS[user.role]}
+                        </Badge>
+                        <Badge variant="secondary" className={cn('text-[10px] px-1.5', user.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600')}>
+                          {user.isActive ? '●' : '○'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 pt-2 border-t border-gray-100">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setResetPasswordId(resetPasswordId === user.id ? null : user.id);
+                        setResetPasswordValue('');
+                      }}
+                      className="h-7 px-2 text-[10px] flex-1"
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" />
+                      Пароль
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toggleActive(user.id, !user.isActive)}
+                      className={cn(
+                        'h-7 px-2 text-[10px] flex-1',
+                        user.isActive ? 'text-red-500 border-red-200' : 'text-emerald-600 border-emerald-200'
+                      )}
+                    >
+                      {user.isActive ? 'Деактивировать' : 'Активировать'}
+                    </Button>
+                  </div>
+                  {resetPasswordId === user.id && (
+                    <div className="mt-2 pt-2 border-t border-amber-200 bg-amber-50/50 -mx-3 -mb-3 px-3 pb-3 rounded-b-xl">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="text"
+                          value={resetPasswordValue}
+                          onChange={(e) => setResetPasswordValue(e.target.value)}
+                          placeholder="Новый пароль"
+                          className="flex-1 h-8 text-sm"
+                        />
+                        <Button size="sm" onClick={() => handleResetPassword(user.id)} className="h-8 bg-amber-600 text-white text-xs">
+                          ОК
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Пользователи — десктопная таблица */}
+          <div className="hidden lg:block bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             {isLoadingUsers ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
@@ -665,4 +741,4 @@ export function Settings() {
       )}
     </div>
   );
-}
+});

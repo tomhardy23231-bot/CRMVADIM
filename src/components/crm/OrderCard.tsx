@@ -2,15 +2,19 @@
 
 import React from 'react';
 import { useCRM } from '@/lib/crm-context';
+import { useAuth } from '@/lib/auth-context';
 import type { Order, OrderStatus } from '@/lib/crm-types';
-import { formatUAH, calcMargin } from '@/lib/crm-utils';
-import { ArrowLeft, Check, PackageX, Receipt, Pencil } from 'lucide-react';
+import { formatUAH, calcMargin, calcSmartHybridCost, formatDateShort } from '@/lib/crm-utils';
+import { ArrowLeft, Check, PackageX, Receipt, Pencil, CalendarDays, X, ChevronDown } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { ArchiveRestore, Archive } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +24,6 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { SpecTab } from './tabs/SpecTab';
-import { TimelineTab } from './tabs/TimelineTab';
 import { BudgetTab } from './tabs/BudgetTab';
 import { OrderCalendarTab } from './tabs/OrderCalendarTab';
 import { Payments1CTab } from './tabs/Payments1CTab';
@@ -29,27 +32,52 @@ import { Payments1CTab } from './tabs/Payments1CTab';
 // OrderCard — Карточка заказа с прогресс-баром, статусом, 4 вкладками
 // ============================================================
 
-const statusSteps: OrderStatus[] = ['Новый', 'В производстве', 'Сборка', 'Отгружен'];
+const statusSteps: OrderStatus[] = [
+  'Проектирование',
+  'Закупка материалов',
+  'В производстве',
+  'Сборка',
+  'Доставка',
+  'Отгружен',
+  'Рекламации',
+  'Выполнен',
+  'Оплачен'
+];
 
 const statusBadgeStyles: Record<string, string> = {
-  'Новый': 'bg-blue-100 text-blue-700 border-blue-200',
+  'Проектирование': 'bg-slate-100 text-slate-700 border-slate-200',
+  'Закупка материалов': 'bg-cyan-100 text-cyan-700 border-cyan-200',
   'В производстве': 'bg-amber-100 text-amber-700 border-amber-200',
   'Сборка': 'bg-purple-100 text-purple-700 border-purple-200',
-  'Отгружен': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  'Доставка': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  'Отгружен': 'bg-blue-100 text-blue-700 border-blue-200',
+  'Рекламации': 'bg-red-100 text-red-700 border-red-200',
+  'Выполнен': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  'Оплачен': 'bg-green-100 text-green-700 border-green-200',
 };
 
 const statusDotColors: Record<string, string> = {
-  'Новый': 'bg-blue-500',
+  'Проектирование': 'bg-slate-500',
+  'Закупка материалов': 'bg-cyan-500',
   'В производстве': 'bg-amber-500',
   'Сборка': 'bg-purple-500',
-  'Отгружен': 'bg-emerald-500',
+  'Доставка': 'bg-indigo-500',
+  'Отгружен': 'bg-blue-500',
+  'Рекламации': 'bg-red-500',
+  'Выполнен': 'bg-emerald-500',
+  'Оплачен': 'bg-green-500',
 };
 
 const statusTranslateMap: Record<string, string> = {
-  'Новый': 'new_status',
-  'В производстве': 'in_production',
-  'Сборка': 'assembly',
-  'Отгружен': 'shipped',
+  'Проектирование': 'status_design',
+  'Закупка материалов': 'status_purchasing',
+  'В производстве': 'status_production',
+  'Сборка': 'status_assembly',
+  'Доставка': 'status_delivery',
+  'Отгружен': 'status_shipped',
+  'Рекламации': 'status_claims',
+  'Выполнен': 'status_completed',
+  'Оплачен': 'status_paid',
 };
 
 interface OrderCardProps {
@@ -57,18 +85,62 @@ interface OrderCardProps {
   onBack: () => void;
 }
 
-export function OrderCard({ orderId, onBack }: OrderCardProps) {
-  const { orders, updateOrderStatus, updateOrderAmount, tr } = useCRM();
+// Скелетон для вкладки
+function TabSkeleton({ tr }: { tr: (key: string) => string }) {
+  return (
+    <Card className="bg-white/80 backdrop-blur-sm shadow-sm md:border-gray-200/50">
+      <CardContent className="p-4 flex flex-col items-center justify-center min-h-[300px]">
+        <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm font-medium text-gray-400">{tr('loading_data')}...</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+export const OrderCard = React.memo(function OrderCard({ orderId, onBack }: OrderCardProps) {
+  const { orders, updateOrderStatus, updateOrderAmount, updateOrderPaymentDate, updateOrderArchivedStatus, tr } = useCRM();
+  const { hasPermission } = useAuth();
   const order = orders.find((o) => o.id === orderId);
 
   const [isEditingAmount, setIsEditingAmount] = React.useState(false);
   const [amountValue, setAmountValue] = React.useState(order?.orderAmount || 0);
+  const [isEditingPaymentDate, setIsEditingPaymentDate] = React.useState(false);
+  const [paymentDateValue, setPaymentDateValue] = React.useState(order?.expectedPaymentDate || '');
+  const [showUnarchiveDialog, setShowUnarchiveDialog] = React.useState(false);
+  const [unarchiveStatus, setUnarchiveStatus] = React.useState<OrderStatus>('Рекламации');
+
+  const isArchived = !!order?.isArchived;
+  const canEditOrders = hasPermission('canEditOrders') && !isArchived;
 
   React.useEffect(() => {
     if (order && !isEditingAmount) {
       setAmountValue(order.orderAmount);
     }
-  }, [order, isEditingAmount]);
+    if (order && !isEditingPaymentDate) {
+      setPaymentDateValue(order.expectedPaymentDate || '');
+    }
+  }, [order, isEditingAmount, isEditingPaymentDate]);
+
+  // Уступка главному потоку ПРИ ОТКРЫТИИ (сначала рендерим "скелет" мгновенно)
+  const [isContentReady, setIsContentReady] = React.useState(false);
+  
+  // Уступка главному потоку ПРИ СМЕНЕ ВКЛАДоК
+  const [visualTab, setVisualTab] = React.useState('spec');
+  const [renderTab, setRenderTab] = React.useState('spec');
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setIsContentReady(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleTabChange = (value: string) => {
+    // 1. Мгновенно меняем активную вкладку визуально (и показываем скелет)
+    setVisualTab(value);
+    // 2. Откладываем рендер данных на следующий микро-кадр
+    setTimeout(() => {
+      setRenderTab(value);
+    }, 0);
+  };
 
   if (!order) {
     return (
@@ -90,13 +162,8 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
   const progressPercent = (currentStepIndex / (statusSteps.length - 1)) * 100;
 
   // Финансовые расчёты
-  // У нас есть order.plannedCost (это то, что пришло из спецификации)
-  // И есть budgetItems (где могут быть вручную добавленные расходы)
   const totalExpenseBudget = order.budgetItems.filter(b => !b.isIncome).reduce((sum, b) => sum + b.plan, 0);
   
-  // Рассчитываем фактические затраты:
-  // 1. Статья "Материалы (План)" использует свой жесткий факт из БД (рассчитанный 1С).
-  // 2. Все остальные (прочие) статьи считают свой факт из привязанных платежек.
   const totalFactExpense = order.budgetItems.filter(b => !b.isIncome).reduce((sum, b) => {
     if (b.name === 'Материалы (План)') {
       return sum + b.fact;
@@ -106,12 +173,11 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
     return sum + paymentsSum;
   }, 0);
   
-  // Общая стоимость проекта = сумма всех плановых расходов
-  const totalCost = totalExpenseBudget;
+  const totalCost = calcSmartHybridCost(order);
   const totalFactCost = totalFactExpense;
   
-  const plannedMargin = calcMargin(order.orderAmount, totalCost);
-  const actualMargin = calcMargin(order.orderAmount, totalFactCost);
+  const plannedMargin = calcMargin(order.orderAmount, totalExpenseBudget);
+  const actualMargin = calcMargin(order.orderAmount, totalCost);
 
   // Обработчик смены статуса
   const handleStatusChange = (newStatus: OrderStatus) => {
@@ -120,203 +186,415 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
+    <div className="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-[1fr_320px] lg:gap-6 lg:items-start">
       {/* === LEFT COLUMN (Основной контент) === */}
-      <div className="space-y-4 min-w-0">
+      <div className="space-y-3 lg:space-y-4 min-w-0">
         
-        {/* Кнопка «Назад» */}
-        <Button variant="ghost" onClick={onBack} className="h-8 px-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md shadow-sm transition-all duration-200 w-fit group">
-          <ArrowLeft className="w-3.5 h-3.5 mr-1.5 group-hover:-translate-x-0.5 transition-transform" />
-          {tr('back_to_orders')}
-        </Button>
-          {/* Шапка заказа */}
-          <Card className="bg-white/80 backdrop-blur-md shadow-sm hover:shadow-md transition-all duration-200 border-gray-200/60">
-        <CardContent className="p-3 space-y-3">
-          {/* Заголовок + статус (выпадающий список) */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-xs font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                  ID: {order.externalId || order.id.slice(0, 8)}
-                </span>
+        {/* Кнопки «Назад» и «Действия» */}
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" onClick={onBack} className="h-8 px-3 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md shadow-sm transition-all duration-200 w-fit group">
+            <ArrowLeft className="w-3.5 h-3.5 mr-1.5 group-hover:-translate-x-0.5 transition-transform" />
+            {tr('back_to_orders')}
+          </Button>
+
+          {canEditOrders && !isArchived && (
+            <Button variant="outline" size="sm" onClick={() => updateOrderArchivedStatus(order.id, true)} className="h-8 text-xs text-gray-500 hover:text-red-600 transition-colors">
+              <Archive className="w-3.5 h-3.5 mr-1.5" />
+              В архив
+            </Button>
+          )}
+        </div>
+
+        {isArchived && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 lg:p-4 mb-4 flex items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                <Archive className="w-4 h-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-amber-800">Заказ находится в архиве</p>
+                <p className="text-xs text-amber-700 mt-0.5">Редактирование недоступно. Для возобновления работы верните заказ из архива</p>
+              </div>
+            </div>
+            {hasPermission('canEditOrders') && (
+              <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white shrink-0" onClick={() => setShowUnarchiveDialog(true)}>
+                <ArchiveRestore className="w-4 h-4 mr-1.5" />
+                Вернуть в работу
+              </Button>
+            )}
+          </div>
+        )}
+
+        <Card className="bg-white/80 backdrop-blur-md shadow-sm hover:shadow-md transition-all duration-200 border-gray-200/60">
+          <CardContent className="p-3">
+
+            {/* ===== МОБИЛЬНЫЙ: Ультракомпактный хедер ===== */}
+            <div className="lg:hidden space-y-2">
+
+              {/* Строка 1: Название + статус */}
+              <div className="flex items-center justify-between gap-2">
+                <h1 className="text-sm font-bold text-gray-900 leading-tight truncate flex-1 min-w-0">{order.name}</h1>
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="cursor-pointer">
-                      <Badge variant="outline" className={cn('cursor-pointer transition-all duration-150 hover:shadow-sm', statusBadgeStyles[order.status])}>
+                  <DropdownMenuTrigger asChild disabled={!canEditOrders}>
+                    <button disabled={!canEditOrders} className="cursor-pointer flex items-center gap-0.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                      <Badge variant="outline" className={cn('text-[10px] py-0 px-2 h-5 font-semibold transition-opacity', statusBadgeStyles[order.status], canEditOrders && 'cursor-pointer')}>
                         {tr(statusTranslateMap[order.status] || order.status)}
                       </Badge>
+                      <ChevronDown className="w-3 h-3 text-gray-400" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-48">
+                  <DropdownMenuContent align="end" className="w-48">
                     {statusSteps.map((s) => (
                       <DropdownMenuItem
                         key={s}
                         onClick={() => handleStatusChange(s)}
-                        className={cn(
-                          'flex items-center gap-2 cursor-pointer',
-                          s === order.status && 'bg-gray-50'
-                        )}
+                        className={cn('flex items-center gap-2 cursor-pointer', s === order.status && 'bg-gray-50')}
                       >
                         <span className={cn('w-2 h-2 rounded-full', statusDotColors[s])} />
                         {tr(statusTranslateMap[s] || s)}
-                        {s === order.status && (
-                          <Check className="w-3.5 h-3.5 text-gray-400 ml-auto" />
-                        )}
+                        {s === order.status && <Check className="w-3.5 h-3.5 text-gray-400 ml-auto" />}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              <h1 className="text-base font-semibold text-gray-900 leading-tight">{order.name}</h1>
-            </div>
-          </div>
 
-          {/* Финансовая сводка */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-gray-100">
-            <div className="p-1 px-2 group border border-transparent hover:border-gray-200 transition-colors rounded-md">
-              <div className="flex items-center justify-between mb-0.5">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">{tr('order_amount')}</p>
-                  {order.isAmountManual && !isEditingAmount && (
-                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-0.5" title="Введено вручную">
-                      <Pencil className="w-2.5 h-2.5" /> Вручную
-                    </span>
+              {/* Строка 2: Прогресс-бар (тонкий, без лейбла — счётчик встроен) */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#426BB3] to-emerald-500 rounded-full transition-all duration-500"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <span className="text-[9px] font-bold text-gray-400 shrink-0">{currentStepIndex + 1}/{statusSteps.length}</span>
+              </div>
+
+              {/* Строка 3: Финансы — 4 чипа в одну строку */}
+              <div className="flex items-stretch gap-1.5 pt-1 border-t border-gray-100">
+                {/* Сумма — занимает больше места */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide leading-none mb-0.5">Сумма</p>
+                  <div className="flex items-center gap-1">
+                    {isEditingAmount ? (
+                      <div className="flex items-center gap-1 w-full">
+                        <input
+                          type="number"
+                          className="w-full bg-white border border-emerald-400 rounded px-1.5 py-0.5 text-xs font-bold text-gray-900 outline-none"
+                          value={amountValue || ''}
+                          onChange={(e) => setAmountValue(Number(e.target.value))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { updateOrderAmount(order.id, amountValue); setIsEditingAmount(false); }
+                            else if (e.key === 'Escape') { setAmountValue(order.orderAmount); setIsEditingAmount(false); }
+                          }}
+                          autoFocus
+                        />
+                        <button onClick={() => { updateOrderAmount(order.id, amountValue); setIsEditingAmount(false); }}
+                          className="p-0.5 px-1 bg-emerald-500 text-white rounded shrink-0">
+                          <Check className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => setIsEditingAmount(true)}
+                          disabled={!canEditOrders}
+                          className={cn("text-sm font-black leading-none truncate", order.isAmountManual ? "text-emerald-600" : "text-red-500", !canEditOrders && "cursor-default")}
+                        >
+                          {formatUAH(order.orderAmount)}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {/* Дата оплаты */}
+                  {!isEditingAmount && (
+                    <div className="mt-0.5">
+                      {isEditingPaymentDate ? (
+                        <div className="flex items-center gap-1">
+                          <input type="date"
+                            className="bg-white border border-indigo-400 rounded px-1 py-0.5 text-[10px] text-gray-700 outline-none w-full"
+                            value={paymentDateValue}
+                            onChange={(e) => setPaymentDateValue(e.target.value)}
+                            autoFocus
+                          />
+                          <button onClick={() => { updateOrderPaymentDate(order.id, paymentDateValue || null); setIsEditingPaymentDate(false); }}
+                            className="p-0.5 px-1 bg-indigo-500 text-white rounded shrink-0">
+                            <Check className="w-2.5 h-2.5" />
+                          </button>
+                          {order.expectedPaymentDate && (
+                            <button onClick={() => { updateOrderPaymentDate(order.id, null); setPaymentDateValue(''); setIsEditingPaymentDate(false); }}
+                              className="p-0.5 px-1 bg-red-100 text-red-600 rounded shrink-0">
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          )}
+                        </div>
+                      ) : canEditOrders ? (
+                        <button
+                          onClick={() => setIsEditingPaymentDate(true)}
+                          className={cn(
+                            'flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded',
+                            order.expectedPaymentDate
+                              ? 'bg-indigo-50 text-indigo-600 border border-indigo-200'
+                              : 'text-gray-400 border border-dashed border-gray-200'
+                          )}
+                        >
+                          <CalendarDays className="w-2.5 h-2.5" />
+                          {order.expectedPaymentDate ? formatDateShort(order.expectedPaymentDate) : '+ Дата'}
+                        </button>
+                      ) : order.expectedPaymentDate ? (
+                        <div className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-200">
+                          <CalendarDays className="w-2.5 h-2.5" />
+                          {formatDateShort(order.expectedPaymentDate)}
+                        </div>
+                      ) : null}
+                    </div>
                   )}
                 </div>
-                {!isEditingAmount && (
-                  <button 
-                    onClick={() => setIsEditingAmount(true)} 
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-gray-200 rounded text-gray-500 shadow-sm"
-                    title="Редактировать сумму"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-              
-              {isEditingAmount ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    className="w-full bg-white border border-emerald-400 rounded px-2 py-1 text-base font-bold text-gray-900 outline-none focus:ring-2 focus:ring-emerald-400/50"
-                    value={amountValue || ''}
-                    onChange={(e) => setAmountValue(Number(e.target.value))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        updateOrderAmount(order.id, amountValue);
-                        setIsEditingAmount(false);
-                      } else if (e.key === 'Escape') {
-                        setAmountValue(order.orderAmount);
-                        setIsEditingAmount(false);
-                      }
-                    }}
-                    autoFocus
-                  />
-                  <button
-                    onClick={() => {
-                        updateOrderAmount(order.id, amountValue);
-                        setIsEditingAmount(false);
-                    }}
-                    className="p-1 px-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 shadow-sm shrink-0"
-                  >
-                    <Check className="w-4 h-4" />
-                  </button>
+
+                {/* Разделитель */}
+                <div className="w-px bg-gray-100 self-stretch" />
+
+                {/* Плановая маржа */}
+                <div className="shrink-0 text-center px-1">
+                  <p className="text-[9px] text-gray-400 leading-none mb-0.5 whitespace-nowrap">План.М</p>
+                  <p className={cn('text-sm font-black', plannedMargin >= 20 ? 'text-emerald-600' : plannedMargin >= 10 ? 'text-amber-600' : 'text-red-600')}>
+                    {plannedMargin}%
+                  </p>
                 </div>
-              ) : (
-                <p className={cn(
-                  "text-base font-bold",
-                  order.isAmountManual ? "text-emerald-600" : "text-red-500"
-                )}>
-                  {formatUAH(order.orderAmount)}
-                </p>
-              )}
-            </div>
-            <div className="p-1 px-2">
-              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('planned_margin')}</p>
-              <p
-                className={cn(
-                  'text-base font-bold',
-                  plannedMargin >= 20 ? 'text-emerald-600' : plannedMargin >= 10 ? 'text-amber-600' : 'text-red-600'
-                )}
-              >
-                {plannedMargin}%
-              </p>
-            </div>
-            <div className="p-1 px-2">
-              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('actual_margin')}</p>
-              <p
-                className={cn(
-                  'text-base font-bold',
-                  actualMargin >= 20 ? 'text-emerald-600' : actualMargin >= 10 ? 'text-amber-600' : 'text-red-600'
-                )}
-              >
-                {totalFactCost > 0 ? `${actualMargin}%` : '—'}
-              </p>
-            </div>
-            <div className="p-1 px-2">
-              <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('cost')}</p>
-              <p className="text-base font-bold text-gray-900">{formatUAH(totalCost)}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Вкладки */}
-      <Tabs defaultValue="spec" className="w-full">
-        <TabsList className="bg-white border border-gray-200 p-0.5 h-8">
-          <TabsTrigger
-            value="spec"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs"
-          >
-            {tr('tab_spec')}
-          </TabsTrigger>
-          <TabsTrigger
-            value="budget"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs"
-          >
-            {tr('tab_budget')}
-          </TabsTrigger>
-          <TabsTrigger
-            value="payments"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs font-semibold flex items-center gap-1.5"
-          >
-            <Receipt className="w-3.5 h-3.5" />
-            Оплаты План-Факт
-          </TabsTrigger>
-          <TabsTrigger
-            value="order-calendar"
-            className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs"
-          >
-            {tr('tab_calendar')}
-          </TabsTrigger>
-        </TabsList>
+                {/* Разделитель */}
+                <div className="w-px bg-gray-100 self-stretch" />
 
-        <TabsContent value="spec" className="mt-4">
-          <SpecTab order={order} />
+                {/* Факт маржа */}
+                <div className="shrink-0 text-center px-1">
+                  <p className="text-[9px] text-gray-400 leading-none mb-0.5 whitespace-nowrap">Факт.М</p>
+                  <p className={cn('text-sm font-black', actualMargin >= 20 ? 'text-emerald-600' : actualMargin >= 10 ? 'text-amber-600' : 'text-red-600')}>
+                    {totalFactCost > 0 ? `${actualMargin}%` : '—'}
+                  </p>
+                </div>
+
+                {/* Разделитель */}
+                <div className="w-px bg-gray-100 self-stretch" />
+
+                {/* Себестоимость */}
+                <div className="shrink-0 text-right px-1">
+                  <p className="text-[9px] text-gray-400 leading-none mb-0.5">СС</p>
+                  <p className="text-sm font-black text-gray-700">{formatUAH(totalCost)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* ===== ДЕСКТОП: Без изменений ===== */}
+            <div className="hidden lg:block space-y-3">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-xs font-bold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                    ID: {order.externalId || order.id.slice(0, 8)}
+                  </span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild disabled={!canEditOrders}>
+                      <button disabled={!canEditOrders} className="cursor-pointer flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <Badge variant="outline" className={cn('transition-all duration-150 hover:shadow-sm', statusBadgeStyles[order.status], canEditOrders && 'cursor-pointer')}>
+                          {tr(statusTranslateMap[order.status] || order.status)}
+                        </Badge>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48">
+                      {statusSteps.map((s) => (
+                        <DropdownMenuItem key={s} onClick={() => handleStatusChange(s)}
+                          className={cn('flex items-center gap-2 cursor-pointer', s === order.status && 'bg-gray-50')}>
+                          <span className={cn('w-2 h-2 rounded-full', statusDotColors[s])} />
+                          {tr(statusTranslateMap[s] || s)}
+                          {s === order.status && <Check className="w-3.5 h-3.5 text-gray-400 ml-auto" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <h1 className="text-base font-semibold text-gray-900 leading-tight">{order.name}</h1>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2 pt-2 border-t border-gray-100">
+                {/* Сумма заказа */}
+                <div className="p-2 group border border-transparent hover:border-gray-200 transition-colors rounded-lg">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wide">{tr('order_amount')}</p>
+                    {!isEditingAmount && canEditOrders && (
+                      <button onClick={() => setIsEditingAmount(true)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-gray-200 rounded text-gray-500 shadow-sm">
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  {isEditingAmount ? (
+                    <div className="flex items-center gap-1.5">
+                      <input type="number"
+                        className="w-full bg-white border border-emerald-400 rounded px-2 py-1 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-emerald-400/50"
+                        value={amountValue || ''} onChange={(e) => setAmountValue(Number(e.target.value))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { updateOrderAmount(order.id, amountValue); setIsEditingAmount(false); }
+                          else if (e.key === 'Escape') { setAmountValue(order.orderAmount); setIsEditingAmount(false); }
+                        }} autoFocus />
+                      <button onClick={() => { updateOrderAmount(order.id, amountValue); setIsEditingAmount(false); }}
+                        className="p-1 px-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 shadow-sm shrink-0">
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className={cn("text-base font-bold", order.isAmountManual ? "text-emerald-600" : "text-red-500")}>
+                        {formatUAH(order.orderAmount)}
+                      </p>
+                      <div className="mt-1">
+                        {isEditingPaymentDate ? (
+                          <div className="flex items-center gap-1">
+                            <input type="date"
+                              className="bg-white border border-indigo-400 rounded px-1.5 py-0.5 text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-indigo-400/50 w-full"
+                              value={paymentDateValue} onChange={(e) => setPaymentDateValue(e.target.value)} autoFocus />
+                            <button onClick={() => { updateOrderPaymentDate(order.id, paymentDateValue || null); setIsEditingPaymentDate(false); }}
+                              className="p-0.5 px-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 shadow-sm shrink-0">
+                              <Check className="w-3 h-3" />
+                            </button>
+                            {order.expectedPaymentDate && (
+                              <button onClick={() => { updateOrderPaymentDate(order.id, null); setPaymentDateValue(''); setIsEditingPaymentDate(false); }}
+                                className="p-0.5 px-1 bg-red-100 text-red-600 rounded hover:bg-red-200 shadow-sm shrink-0" title="Убрать дату">
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ) : canEditOrders ? (
+                          <button onClick={() => setIsEditingPaymentDate(true)}
+                            className={cn('flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded transition-all duration-150',
+                              order.expectedPaymentDate
+                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                : 'bg-gray-50 text-gray-400 border border-dashed border-gray-300')}>
+                            <CalendarDays className="w-3 h-3" />
+                            {order.expectedPaymentDate ? formatDateShort(order.expectedPaymentDate) : '+ Дата оплаты'}
+                          </button>
+                        ) : order.expectedPaymentDate ? (
+                          <div className={cn('flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded transition-all duration-150 bg-indigo-50 text-indigo-700 border border-indigo-200')}>
+                            <CalendarDays className="w-3 h-3" />
+                            {formatDateShort(order.expectedPaymentDate)}
+                          </div>
+                        ) : null}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="p-2">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('planned_margin')}</p>
+                  <p className={cn('text-base font-bold', plannedMargin >= 20 ? 'text-emerald-600' : plannedMargin >= 10 ? 'text-amber-600' : 'text-red-600')}>
+                    {plannedMargin}%
+                  </p>
+                </div>
+
+                <div className="p-2">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('actual_margin')}</p>
+                  <p className={cn('text-base font-bold', actualMargin >= 20 ? 'text-emerald-600' : actualMargin >= 10 ? 'text-amber-600' : 'text-red-600')}>
+                    {totalFactCost > 0 ? `${actualMargin}%` : '—'}
+                  </p>
+                </div>
+
+                <div className="p-2">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide leading-none mb-1">{tr('cost')}</p>
+                  <p className="text-base font-bold text-gray-900">{formatUAH(totalCost)}</p>
+                </div>
+              </div>
+            </div>
+
+          </CardContent>
+        </Card>
+
+      {/* Вкладки — scrollable на мобильном */}
+      <Tabs value={visualTab} onValueChange={handleTabChange} className="w-full">
+        <div className="overflow-x-auto mobile-hide-scrollbar -mx-3 px-3 lg:mx-0 lg:px-0">
+          <TabsList className="bg-white border border-gray-200 p-0.5 h-9 lg:h-8 w-max lg:w-auto">
+            <TabsTrigger
+              value="spec"
+              className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs whitespace-nowrap"
+            >
+              {tr('tab_spec')}
+            </TabsTrigger>
+            <TabsTrigger
+              value="budget"
+              className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs whitespace-nowrap"
+            >
+              {tr('tab_budget')}
+            </TabsTrigger>
+            <TabsTrigger
+              value="payments"
+              className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs font-semibold flex items-center gap-1 whitespace-nowrap"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Оплаты План-Факт</span>
+              <span className="sm:hidden">Оплаты</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="order-calendar"
+              className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white rounded-md px-3 text-xs whitespace-nowrap"
+            >
+              {tr('tab_calendar')}
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="spec" className="mt-3 lg:mt-4">
+          {isContentReady && visualTab === renderTab ? <SpecTab order={order} /> : <TabSkeleton tr={tr} />}
         </TabsContent>
 
-        <TabsContent value="budget" className="mt-4">
-          <BudgetTab order={order} />
+        <TabsContent value="budget" className="mt-3 lg:mt-4">
+          {isContentReady && visualTab === renderTab ? <BudgetTab order={order} /> : <TabSkeleton tr={tr} />}
         </TabsContent>
 
-        <TabsContent value="payments" className="mt-4">
-          <Payments1CTab order={order} />
+        <TabsContent value="payments" className="mt-3 lg:mt-4">
+          {isContentReady && visualTab === renderTab ? <Payments1CTab order={order} /> : <TabSkeleton tr={tr} />}
         </TabsContent>
 
-        <TabsContent value="order-calendar" className="mt-4">
-          <OrderCalendarTab order={order} />
+        <TabsContent value="order-calendar" className="mt-3 lg:mt-4">
+          {isContentReady && visualTab === renderTab ? <OrderCalendarTab order={order} /> : <TabSkeleton tr={tr} />}
         </TabsContent>
       </Tabs>
       </div>
 
       {/* === RIGHT COLUMN (Sidebar: Статусы + Таймлайн) === */}
-      <div className="flex flex-col gap-4 lg:sticky lg:top-4">
+      <div className="flex flex-col gap-3 lg:gap-4 lg:sticky lg:top-4">
         
-        {/* Новый блок статуса (Вертикальный или Капсулы) */}
+        {/* Статусный трекер — горизонтальный скролл на мобильном, вертикальный на десктопе */}
         <Card className="bg-white shadow-sm border-gray-200/60 transition-all duration-200 hover:shadow-md">
-          <CardContent className="p-4">
-            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">Текущий этап</h2>
-            <div className="space-y-3">
+          <CardContent className="p-3 lg:p-4">
+            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 lg:mb-4">Текущий этап</h2>
+            
+            {/* Мобильный: горизонтальные пилсы */}
+            <div className="lg:hidden">
+              <div className="mobile-status-scroll">
+                {statusSteps.map((step, i) => {
+                  const isCompleted = i < currentStepIndex;
+                  const isCurrent = i === currentStepIndex;
+                  return (
+                    <button
+                      key={step}
+                      disabled={!canEditOrders}
+                      onClick={() => handleStatusChange(step)}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-medium border transition-all min-h-[32px]',
+                        isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        isCurrent ? 'bg-[#426BB3] text-white border-[#426BB3] shadow-md shadow-blue-200' :
+                        'bg-gray-50 text-gray-400 border-gray-200',
+                        !canEditOrders && 'opacity-70 cursor-not-allowed'
+                      )}
+                    >
+                      {isCompleted && <Check className="w-3 h-3" />}
+                      {isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                      {tr(statusTranslateMap[step] || step)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Десктоп: вертикальный трекер */}
+            <div className="hidden lg:block space-y-3">
               {statusSteps.map((step, i) => {
                 const isCompleted = i < currentStepIndex;
                 const isCurrent = i === currentStepIndex;
@@ -334,29 +612,33 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
                     
                     {/* Круглая иконка */}
                     <button
+                      disabled={!canEditOrders}
                       onClick={() => handleStatusChange(step)}
                       className={cn(
                         "relative z-10 w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-all duration-300",
                         isCompleted ? "bg-emerald-500 border-emerald-500 text-white" :
                         isCurrent ? "bg-white border-emerald-500 ring-4 ring-emerald-50" :
-                        "bg-white border-gray-200 group-hover:border-emerald-300"
+                        "bg-white border-gray-200",
+                        canEditOrders && !isCurrent && !isCompleted && "hover:border-emerald-300 group-hover:border-emerald-300",
+                        !canEditOrders && "opacity-70 cursor-not-allowed"
                       )}
-                      title={`Сменить на "${step}"`}
+                      title={canEditOrders ? `Сменить на "${step}"` : step}
                     >
                       {isCompleted || (isCurrent && i === statusSteps.length - 1) ? <Check className="w-3.5 h-3.5" /> : 
                        isCurrent ? <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> : 
-                       <div className="w-1.5 h-1.5 rounded-full bg-gray-200 group-hover:bg-emerald-300" />}
+                       <div className={cn("w-1.5 h-1.5 rounded-full bg-gray-200", canEditOrders && "group-hover:bg-emerald-300")} />}
                     </button>
                     
                     {/* Текст */}
                     <div className="flex-1 pt-0.5 pb-1">
                       <p className={cn(
-                        "text-sm font-medium transition-colors cursor-pointer",
+                        "text-sm font-medium transition-colors",
                         isCompleted ? "text-gray-900" :
                         isCurrent ? "text-emerald-700" :
-                        "text-gray-400 group-hover:text-gray-600"
+                        "text-gray-400",
+                        canEditOrders && (isCompleted || isCurrent ? "" : "group-hover:text-gray-600 cursor-pointer")
                       )}
-                      onClick={() => handleStatusChange(step)}
+                      onClick={() => canEditOrders && handleStatusChange(step)}
                       >
                         {tr(statusTranslateMap[step] || step)}
                       </p>
@@ -367,13 +649,43 @@ export function OrderCard({ orderId, onBack }: OrderCardProps) {
             </div>
           </CardContent>
         </Card>
-
-        {/* Блок Таймлайна (Таймлайн сам рендерит карточку) */}
-        <div className="transition-all duration-200">
-          <TimelineTab order={order} />
-        </div>
-
       </div>
+      <Dialog open={showUnarchiveDialog} onOpenChange={setShowUnarchiveDialog}>
+        <DialogContent className="max-w-md mx-2">
+          <DialogHeader>
+            <DialogTitle>Вернуть заказ в работу</DialogTitle>
+            <DialogDescription>
+              Выберите статус, с которым заказ будет возвращен из архива.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={unarchiveStatus} onValueChange={(v: OrderStatus) => setUnarchiveStatus(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите статус" />
+              </SelectTrigger>
+              <SelectContent>
+                {statusSteps.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    <div className="flex items-center gap-2">
+                      <span className={cn('w-2 h-2 rounded-full', statusDotColors[s])} />
+                      {tr(statusTranslateMap[s] || s)}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowUnarchiveDialog(false)}>Отмена</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => {
+              updateOrderArchivedStatus(order.id, false, unarchiveStatus);
+              setShowUnarchiveDialog(false);
+            }}>
+              Восстановить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-}
+});

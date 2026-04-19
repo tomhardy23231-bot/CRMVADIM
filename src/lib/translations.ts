@@ -10,6 +10,7 @@ const ru: TranslationMap = {
   // --- Навигация ---
   dashboard: 'Дашборд',
   orders: 'Заказы',
+  archive: 'Архив',
   payment_calendar: 'Платёжный календарь',
   settings: 'Настройки',
   finance: 'Финансы',
@@ -21,6 +22,7 @@ const ru: TranslationMap = {
   solve_problem: 'Решить проблему',
   active_orders: 'Активных заказов',
   expected_profit: 'Ожидаемая прибыль',
+  expected_receipts: 'Ожидаемые поступления',
   month_payments: 'Выплаты месяца',
   week_payments: 'Выплаты на этой неделе',
   hot_shipments: 'Горящие отгрузки',
@@ -57,10 +59,15 @@ const ru: TranslationMap = {
   no_results: 'Нет результатов',
 
   // --- Статусы ---
-  new_status: 'Новый',
-  in_production: 'В производстве',
-  assembly: 'Сборка',
-  shipped: 'Отгружен',
+  status_design: 'Проектирование',
+  status_purchasing: 'Закупка материалов',
+  status_production: 'В производстве',
+  status_assembly: 'Сборка',
+  status_delivery: 'Доставка',
+  status_shipped: 'Отгружен',
+  status_claims: 'Рекламации',
+  status_completed: 'Выполнен',
+  status_paid: 'Оплачен',
 
   // --- Карточка заказа ---
   planned_margin: 'Плановая маржа',
@@ -160,6 +167,7 @@ const ukr: TranslationMap = {
   // --- Навигация ---
   dashboard: 'Дашборд',
   orders: 'Замовлення',
+  archive: 'Архів',
   payment_calendar: 'Платіжний календар',
   settings: 'Налаштування',
   finance: 'Фінанси',
@@ -171,6 +179,7 @@ const ukr: TranslationMap = {
   solve_problem: 'Вирішити проблему',
   active_orders: 'Активних замовлень',
   expected_profit: 'Очікуваний прибуток',
+  expected_receipts: 'Очікувані надходження',
   month_payments: 'Виплати місяця',
   week_payments: 'Виплати на цьому тижні',
   hot_shipments: 'Гарячі відправлення',
@@ -206,11 +215,16 @@ const ukr: TranslationMap = {
   sort_desc: 'Сортування Я→А',
   no_results: 'Немає результатів',
 
-  // --- Статуси ---
-  new_status: 'Новий',
-  in_production: 'У виробництві',
-  assembly: 'Збірка',
-  shipped: 'Відправлено',
+  // --- Статусы ---
+  status_design: 'Проєктування',
+  status_purchasing: 'Закупівля матеріалів',
+  status_production: 'У виробництві',
+  status_assembly: 'Збірка',
+  status_delivery: 'Доставка',
+  status_shipped: 'Відвантажено',
+  status_claims: 'Рекламації',
+  status_completed: 'Виконано',
+  status_paid: 'Оплачено',
 
   // --- Картка замовлення ---
   planned_margin: 'Планова маржа',

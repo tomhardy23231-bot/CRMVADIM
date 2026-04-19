@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ClipboardList,
   CalendarClock,
+  Archive,
   TreePine,
   PanelLeftClose,
   PanelLeftOpen,
@@ -25,6 +26,7 @@ import { cn } from '@/lib/utils';
 const navItems: { id: PageId; labelKey: string; icon: React.ElementType }[] = [
   { id: 'dashboard', labelKey: 'dashboard', icon: LayoutDashboard },
   { id: 'orders', labelKey: 'orders', icon: ClipboardList },
+  { id: 'archive', labelKey: 'archive', icon: Archive },
   { id: 'payment-calendar', labelKey: 'payment_calendar', icon: CalendarClock },
 ];
 
@@ -35,14 +37,14 @@ export function Sidebar() {
     <TooltipProvider delayDuration={0}>
       <aside
         className={cn(
-          'hidden lg:flex flex-col bg-white border-r border-gray-200 min-h-screen shrink-0 transition-all duration-300 ease-in-out relative overflow-visible',
+          'hidden lg:flex flex-col bg-[#426BB3] min-h-screen shrink-0 transition-all duration-300 ease-in-out relative overflow-visible text-white shadow-[4px_0_24px_-10px_rgba(0,0,0,0.1)]',
           sidebarCollapsed ? 'w-20' : 'w-64'
         )}
       >
         {/* Логотип + кнопка сворачивания */}
         <div
           className={cn(
-            'flex items-center border-b border-gray-100 shrink-0 transition-all duration-300',
+            'flex items-center border-b border-white/10 shrink-0 transition-all duration-300',
             sidebarCollapsed ? 'flex-col justify-center gap-2 py-3' : 'h-16 px-5 justify-between'
           )}
         >
@@ -53,10 +55,10 @@ export function Sidebar() {
             </div>
             {!sidebarCollapsed && (
               <div className="flex flex-col overflow-hidden">
-                <span className="text-sm font-bold tracking-wide text-gray-900 leading-tight">
+                <span className="text-sm font-bold tracking-wide text-white leading-tight">
                   WEST WOOD
                 </span>
-                <span className="text-[10px] text-gray-400 tracking-widest uppercase">
+                <span className="text-[10px] text-blue-100/70 tracking-widest uppercase">
                   Company 2012
                 </span>
               </div>
@@ -69,9 +71,9 @@ export function Sidebar() {
             size="icon"
             onClick={toggleSidebar}
             className={cn(
-              'text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all shrink-0',
+              'text-blue-100/80 hover:text-white hover:bg-white/10 transition-all shrink-0',
               sidebarCollapsed
-                ? 'h-8 w-8 rounded-xl border border-gray-200 bg-white shadow-sm hover:shadow-md hover:border-gray-300'
+                ? 'h-8 w-8 rounded-xl border border-white/10 bg-black/20 hover:bg-white/10'
                 : 'h-8 w-8'
             )}
           >
@@ -100,8 +102,8 @@ export function Sidebar() {
                     ? 'justify-center h-10 w-10 mx-auto'
                     : 'gap-3 px-3 py-2.5',
                   isActive
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200 hover:bg-emerald-700 hover:shadow-lg'
-                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                    ? 'bg-white text-[#426BB3] shadow-md shadow-black/10'
+                    : 'text-blue-100/80 hover:bg-white/10 hover:text-white'
                 )}
               >
                 <Icon className={cn('shrink-0', sidebarCollapsed ? 'w-5 h-5' : 'w-4.5 h-4.5')} />
@@ -139,8 +141,8 @@ export function Sidebar() {
                     ? 'justify-center h-10 w-10 mx-auto'
                     : 'gap-3 px-3 py-2.5',
                   isActive
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200 hover:bg-emerald-700 hover:shadow-lg'
-                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                    ? 'bg-white text-[#426BB3] shadow-md shadow-black/10'
+                    : 'text-blue-100/80 hover:bg-white/10 hover:text-white'
                 )}
               >
                 <Settings className={cn('shrink-0', sidebarCollapsed ? 'w-5 h-5' : 'w-4.5 h-4.5')} />
@@ -162,7 +164,7 @@ export function Sidebar() {
         {/* Подвал сайдбара */}
         <div
           className={cn(
-            'border-t border-gray-100 py-4 shrink-0 transition-all duration-300 space-y-3',
+            'border-t border-white/10 py-4 shrink-0 transition-all duration-300 space-y-3',
             sidebarCollapsed ? 'px-3 text-center' : 'px-5'
           )}
         >
@@ -171,8 +173,8 @@ export function Sidebar() {
             <div className={cn('flex items-center', sidebarCollapsed ? 'justify-center' : 'gap-2')}>
               {!sidebarCollapsed && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-700 truncate">{currentUser.firstName} {currentUser.lastName}</p>
-                  <p className="text-[10px] text-gray-400 truncate">{currentUser.role === 'ADMIN' ? 'Администратор' : currentUser.role === 'MANAGER' ? 'Менеджер' : 'Рабочий'}</p>
+                  <p className="text-xs font-medium text-white truncate">{currentUser.firstName} {currentUser.lastName}</p>
+                  <p className="text-[10px] text-blue-100/70 truncate">{currentUser.role === 'ADMIN' ? 'Администратор' : currentUser.role === 'MANAGER' ? 'Менеджер' : 'Рабочий'}</p>
                 </div>
               )}
               {sidebarCollapsed ? (
@@ -180,7 +182,7 @@ export function Sidebar() {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => signOut({ callbackUrl: '/login' })}
-                      className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                      className="h-8 w-8 rounded-lg flex items-center justify-center text-blue-100/80 hover:text-white hover:bg-red-500/80 transition-all"
                     >
                       <LogOut className="w-4 h-4" />
                     </button>
@@ -190,7 +192,7 @@ export function Sidebar() {
               ) : (
                 <button
                   onClick={() => signOut({ callbackUrl: '/login' })}
-                  className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all shrink-0"
+                  className="h-7 w-7 rounded-lg flex items-center justify-center text-blue-100/80 hover:text-white hover:bg-red-500/80 transition-all shrink-0"
                   title="Выйти"
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -199,9 +201,9 @@ export function Sidebar() {
             </div>
           )}
           {sidebarCollapsed ? (
-            <p className="text-[9px] text-gray-300">v1.0</p>
+            <p className="text-[9px] text-blue-100/50">v1.0</p>
           ) : (
-            <p className="text-[10px] text-gray-400">
+            <p className="text-[10px] text-blue-100/50">
               v1.0.0 • {tr('furniture_manufacturing')}
             </p>
           )}
